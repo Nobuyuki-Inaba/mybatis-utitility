@@ -20,9 +20,11 @@ out/**
 # Webview scripts — keep bundled JS, exclude sources
 media/src/**
 
-# Keep sql.js (pure WASM — no native compilation required)
+# Keep only the two sql.js files needed at runtime (excludes debug/asm/browser variants)
 node_modules/**
-!node_modules/sql.js/**
+!node_modules/sql.js/package.json
+!node_modules/sql.js/dist/sql-wasm.js
+!node_modules/sql.js/dist/sql-wasm.wasm
 
 # Package management
 package-lock.json
