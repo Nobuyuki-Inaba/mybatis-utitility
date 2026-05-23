@@ -8,6 +8,7 @@ VSCode extension for MyBatis developers. Browse Mapper files, fill query paramet
 
 - **Mapper panel** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type. Includes a real-time filter input and flat / hierarchical view toggle
 - **Query panel** — Click a query to open it, edit SQL inline, fill typed parameters (`#{param}`), and execute
+- **Parameter presets** — Save named sets of parameter values to `.vscode/mybatis-utility/params.yaml`. Load them from a dropdown to re-fill values instantly. The file can be committed and shared across the team
 - **Multi-database support** — SQLite, PostgreSQL, MySQL (extensible driver registry)
 - **Pagination** — Large result sets paginated (configurable page size)
 - **CSV export** — Export query results to CSV with one click
@@ -63,6 +64,12 @@ Passwords are stored in VSCode's Secret Storage (never in plain text).
 To execute only part of the SQL, select it and press **Ctrl+Shift+Enter** (or click **execute(range)**).
 
 If you edited the SQL and want to revert it, click **reset SQL**.
+
+#### Parameter presets
+
+To save the current parameter values as a preset, type a name in the **Preset name** field and click **Save**. To restore saved values, select a preset from the dropdown. Click **Delete** to remove the selected preset, or **Clear params** to reset all values.
+
+Presets are saved to `.vscode/mybatis-utility/params.yaml` in your workspace. Add the file to `.gitignore` to keep values local, or commit it to share with your team.
 
 ## Keyboard Shortcuts
 
