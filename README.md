@@ -6,7 +6,7 @@ VSCode extension for MyBatis developers. Browse Mapper files, fill query paramet
 
 ## Features
 
-- **Mapper tree view** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type
+- **Mapper panel** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type. Includes a real-time filter input and flat / hierarchical view toggle
 - **Query panel** — Click a query to open it, edit SQL inline, fill typed parameters (`#{param}`), and execute
 - **Multi-database support** — SQLite, PostgreSQL, MySQL (extensible driver registry)
 - **Pagination** — Large result sets paginated (configurable page size)
@@ -36,7 +36,7 @@ Set **Scan Folders** to the directories that contain your Mapper files:
 
 Default: `["**/mapper", "**/repository"]` — works for most Spring Boot projects out of the box.
 
-The **Mappers** panel in the sidebar will populate automatically.
+The **Mappers** panel in the sidebar will populate automatically. Use the filter input at the top to narrow results in real time, and use the list/tree icon in the title bar to switch between flat and hierarchical views.
 
 ### 2. Add a database connection
 
@@ -54,7 +54,7 @@ Passwords are stored in VSCode's Secret Storage (never in plain text).
 
 ### 3. Run a query
 
-1. Click any query in the **Mappers** tree
+1. Click any query in the **Mappers** panel (use the filter input to find it quickly)
 2. The **Query** panel opens — the SQL from the mapper file is shown and is editable
 3. Select a database from the dropdown
 4. Fill in parameter values (choose type: string / number / boolean / date / null)

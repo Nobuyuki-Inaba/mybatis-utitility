@@ -7,6 +7,18 @@ import { parseFile } from './mapperScanner';
 // Tree items
 // ---------------------------------------------------------------------------
 
+export class FolderItem extends vscode.TreeItem {
+  constructor(
+    public readonly folderPath: string,
+    label: string
+  ) {
+    super(label, vscode.TreeItemCollapsibleState.Expanded);
+    this.tooltip = folderPath;
+    this.contextValue = 'mapperFolder';
+    this.iconPath = new vscode.ThemeIcon('folder-opened');
+  }
+}
+
 export class MapperFileItem extends vscode.TreeItem {
   constructor(public readonly mapperFile: MapperFile) {
     super(mapperFile.label, vscode.TreeItemCollapsibleState.Collapsed);
@@ -40,9 +52,8 @@ export class MapperQueryItem extends vscode.TreeItem {
 // Provider
 // ---------------------------------------------------------------------------
 
-type MapperTreeItem = MapperFileItem | MapperQueryItem;
+type MapperTreeItem = FolderItem | MapperFileItem | MapperQueryItem;
 
-// Directories excluded from search — matches VSCode's default search.exclude
 const EXCLUDE = '{**/node_modules/**,**/target/**,**/build/**,**/out/**,**/dist/**,.git/**}';
 
 export class MapperProvider implements vscode.TreeDataProvider<MapperTreeItem> {
@@ -51,13 +62,26 @@ export class MapperProvider implements vscode.TreeDataProvider<MapperTreeItem> {
 
   private mapperFiles: MapperFile[] = [];
   private _scanning = false;
+  private _filterText = '';
+  private _displayMode: 'flat' | 'tree' = 'flat';
 
   constructor() {
-    // Kick off async scan without blocking activation
     void this._scan();
   }
 
-  /** Trigger a fresh scan (e.g. from the Refresh button or file watcher). */
+  getFilterText(): string { return this._filterText; }
+  getDisplayMode(): 'flat' | 'tree' { return this._displayMode; }
+
+  setFilter(text: string): void {
+    this._filterText = text.toLowerCase().trim();
+    this._onDidChangeTreeData.fire();
+  }
+
+  setDisplayMode(mode: 'flat' | 'tree'): void {
+    this._displayMode = mode;
+    this._onDidChangeTreeData.fire();
+  }
+
   refresh(): void {
     void this._scan();
   }
@@ -68,16 +92,70 @@ export class MapperProvider implements vscode.TreeDataProvider<MapperTreeItem> {
 
   getChildren(element?: MapperTreeItem): MapperTreeItem[] {
     if (!element) {
-      return this.mapperFiles.map(f => new MapperFileItem(f));
+      const files = this._filteredFiles();
+      if (this._displayMode === 'flat') {
+        return files.map(f => new MapperFileItem(f));
+      }
+      return this._buildFolderNodes(files);
+    }
+    if (element instanceof FolderItem) {
+      return this._filteredFiles()
+        .filter(f => path.dirname(f.filePath) === element.folderPath)
+        .map(f => new MapperFileItem(f));
     }
     if (element instanceof MapperFileItem) {
-      return element.mapperFile.queries.map(q => new MapperQueryItem(q, element.mapperFile));
+      return this._queriesFor(element.mapperFile);
     }
     return [];
   }
 
   // ---------------------------------------------------------------------------
-  // Async scan — uses VSCode's file index, does NOT block the event loop
+  // Filter helpers
+  // ---------------------------------------------------------------------------
+
+  private _filteredFiles(): MapperFile[] {
+    if (!this._filterText) { return this.mapperFiles; }
+    return this.mapperFiles.filter(f =>
+      f.label.toLowerCase().includes(this._filterText) ||
+      path.basename(f.filePath).toLowerCase().includes(this._filterText) ||
+      f.queries.some(q => q.id.toLowerCase().includes(this._filterText))
+    );
+  }
+
+  private _queriesFor(mf: MapperFile): MapperQueryItem[] {
+    // If the file itself matched by name, show all its queries
+    const fileNameMatch = !this._filterText ||
+      mf.label.toLowerCase().includes(this._filterText) ||
+      path.basename(mf.filePath).toLowerCase().includes(this._filterText);
+    const queries = fileNameMatch
+      ? mf.queries
+      : mf.queries.filter(q => q.id.toLowerCase().includes(this._filterText));
+    return queries.map(q => new MapperQueryItem(q, mf));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Hierarchical folder grouping
+  // ---------------------------------------------------------------------------
+
+  private _buildFolderNodes(files: MapperFile[]): FolderItem[] {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    const folderMap = new Map<string, string>(); // absPath → display label
+    for (const f of files) {
+      const dir = path.dirname(f.filePath);
+      if (!folderMap.has(dir)) {
+        const rel = workspaceRoot
+          ? path.relative(workspaceRoot, dir).replace(/\\/g, '/')
+          : dir;
+        folderMap.set(dir, rel || '.');
+      }
+    }
+    return [...folderMap.entries()]
+      .sort(([, a], [, b]) => a.localeCompare(b))
+      .map(([absPath, label]) => new FolderItem(absPath, label));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Async scan
   // ---------------------------------------------------------------------------
 
   private async _scan(): Promise<void> {
@@ -87,7 +165,6 @@ export class MapperProvider implements vscode.TreeDataProvider<MapperTreeItem> {
       const config = vscode.workspace.getConfiguration('mybatisUtility');
       const scanFolders: string[] = config.get<string[]>('scanFolders', []);
 
-      // No folders configured → show empty tree (no scan)
       if (scanFolders.length === 0) {
         this.mapperFiles = [];
         this._onDidChangeTreeData.fire();
@@ -97,14 +174,12 @@ export class MapperProvider implements vscode.TreeDataProvider<MapperTreeItem> {
       const javaGlob = makeGlob(scanFolders, '*.java');
       const xmlGlob  = makeGlob(scanFolders, '*.xml');
 
-      // findFiles uses VSCode's built-in watcher/index → much faster than manual walk
       const [javaUris, xmlUris] = await Promise.all([
         vscode.workspace.findFiles(javaGlob, EXCLUDE),
         vscode.workspace.findFiles(xmlGlob,  EXCLUDE),
       ]);
 
       const results: MapperFile[] = [];
-      // Process files concurrently in batches to avoid flooding the FS
       await Promise.all([...javaUris, ...xmlUris].map(async (uri) => {
         try {
           const bytes = await vscode.workspace.fs.readFile(uri);
@@ -116,7 +191,6 @@ export class MapperProvider implements vscode.TreeDataProvider<MapperTreeItem> {
         }
       }));
 
-      // Sort by source then label for stable tree order
       results.sort((a, b) =>
         a.source.localeCompare(b.source) || a.label.localeCompare(b.label)
       );
@@ -132,21 +206,9 @@ export class MapperProvider implements vscode.TreeDataProvider<MapperTreeItem> {
 // Glob helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Build a glob string from user-configured patterns.
- *
- * Each entry may be:
- *   - A plain folder path: "src/main/java"    → "src/main/java/**\/*.java"
- *   - A glob with wildcards: "**", "src/**"   → appends "/*.java" only if needed
- *     (** / ** collapses to ** in all glob engines, so doubling is harmless)
- *
- * Multiple entries are combined with {a,b} syntax.
- */
 function makeGlob(folders: string[], ext: string): string {
   const patterns = folders.map(f => {
-    const p = f.replace(/\\/g, '/').replace(/\/+$/, ''); // normalise separators + trailing slash
-    // If the pattern ends with a wildcard segment, just append the file extension glob.
-    // Otherwise treat it as a plain directory and add the recursive wildcard.
+    const p = f.replace(/\\/g, '/').replace(/\/+$/, '');
     return p.endsWith('*') ? `${p}/${ext}` : `${p}/**/${ext}`;
   });
   return patterns.length === 1 ? patterns[0] : `{${patterns.join(',')}}`;

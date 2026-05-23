@@ -23,30 +23,32 @@ Type-checking uses two tsconfig files to handle the DOM / Node split:
 
 ```
 src/
-  extension.ts          # activation, command registration, quick-add wizard
-  types.ts              # shared type definitions (DbConnectionConfig, ParamEntry, ExtToWebMsg, …)
-  configManager.ts      # read/write DB connections + passwords (VSCode Secret Storage)
-  mapperProvider.ts     # TreeDataProvider — scans mapper files via vscode.workspace.findFiles()
-  mapperScanner.ts      # pure parsing logic (no VSCode API — unit-testable via FileReader interface)
-  queryParser.ts        # extract #{} placeholders, buildExecutableSql(), formatValue()
-  queryPanel.ts         # WebviewPanel for query execution (singleton)
-  configPanel.ts        # WebviewPanel for DB connection management (singleton)
-  databaseProvider.ts   # TreeDataProvider for the Databases sidebar view
-  dbManager.ts          # driver registry — registerDriver(type, driver)
-  extensionContext.ts   # setExtensionPath() / getExtensionPath() for sql.js WASM location
+  extension.ts              # activation, command registration, quick-add wizard
+  types.ts                  # shared type definitions (DbConnectionConfig, ParamEntry, ExtToWebMsg, …)
+  configManager.ts          # read/write DB connections + passwords (VSCode Secret Storage)
+  mapperWebviewProvider.ts  # WebviewViewProvider — Mappers panel (filter input + scan logic)
+  mapperProvider.ts         # TreeDataProvider helpers (FolderItem, MapperFileItem, MapperQueryItem)
+  mapperScanner.ts          # pure parsing logic (no VSCode API — unit-testable via FileReader interface)
+  queryParser.ts            # extract #{} placeholders, buildExecutableSql(), formatValue()
+  queryPanel.ts             # WebviewPanel for query execution (singleton)
+  configPanel.ts            # WebviewPanel for DB connection management (singleton)
+  databaseProvider.ts       # TreeDataProvider for the Databases sidebar view
+  dbManager.ts              # driver registry — registerDriver(type, driver)
+  extensionContext.ts       # setExtensionPath() / getExtensionPath() for sql.js WASM location
   drivers/
-    sqlite.ts           # sql.js (pure WASM, no native build required)
-    postgresql.ts       # pg (pure JS)
-    mysql.ts            # mysql2/promise (pure JS)
+    sqlite.ts               # sql.js (pure WASM, no native build required)
+    postgresql.ts           # pg (pure JS)
+    mysql.ts                # mysql2/promise (pure JS)
 
 media/src/
-  queryPanel.ts         # webview script — DOM only, no Node APIs
-  configPanel.ts        # webview script for DB config panel
+  queryPanel.ts             # webview script — DOM only, no Node APIs
+  configPanel.ts            # webview script for DB config panel
+  mapperPanel.ts            # webview script for Mappers panel (filter, flat/tree render)
 
-sample/                 # test fixtures
-  src/main/java/…/      # Java @Mapper samples (SampleMapper, UserMapper)
+sample/                     # test fixtures
+  src/main/java/…/          # Java @Mapper samples (SampleMapper, UserMapper)
   src/main/resources/mapper/  # XML mapper samples
-  test.db               # SQLite test database (sample + users + wide_table)
+  test.db                   # SQLite test database (sample + users + wide_table)
 ```
 
 ## Architecture decisions
@@ -73,15 +75,28 @@ The current Export CSV exports fetched rows (up to fetchLimit). For true unlimit
 - `pageSize` (default 200): sent to webview via `settings` message; webview re-renders on change
 - Both are configurable in VSCode Settings
 
+### Mappers panel (WebviewView)
+
+`mapperWebviewProvider.ts` implements `vscode.WebviewViewProvider` (view type `mybatisUtility.mapperView`, declared as `"type": "webview"` in `package.json`).
+
+- `resolveWebviewView()` sets the HTML and kicks off `_scan()`. Scan results are sent to the webview via `{ type: 'setMappers', items }`.
+- `setDisplayMode('flat'|'tree')` sends `{ type: 'setDisplayMode', mode }` — called by the title-bar toggle commands in `extension.ts`.
+- The webview script (`media/src/mapperPanel.ts`) handles all filtering and rendering client-side (150 ms debounce). No round-trip to the extension for filter changes.
+- Clicking a query in the webview posts `{ type: 'openQuery', query, mapperFile }` → `MapperWebviewProvider` calls `QueryPanel.show()` directly.
+
 ### Webview message protocol
 
-All types are in `src/types.ts`:
+Query/Config panels (`src/types.ts`):
 - `ExtToWebMsg` — extension → webview (setQuery, queryResult, queryError, connections, connectionSaved, connectionDeleted, **settings**)
 - `WebToExtMsg` — webview → extension (execute, getConnections, saveConnection, deleteConnection)
 
+Mapper panel (ad-hoc, not in types.ts):
+- Extension → webview: `{ type: 'setMappers', items: MapperFile[] }`, `{ type: 'setDisplayMode', mode }`
+- Webview → extension: `{ type: 'openQuery', query, mapperFile }`, `{ type: 'openSettings' }`
+
 ### SQL execution flow
 
-1. User clicks query item → `QueryPanel.show()` → `_sendQuery()` + `_sendSettings()` + `_sendConnections()`
+1. User clicks query in Mappers panel → webview posts `openQuery` → `QueryPanel.show()`
 2. User clicks execute → webview posts `execute` with `displayedSql` (editable div content)
 3. Extension reads `fetchLimit` from settings, calls `buildExecutableSql()` → `executeQuery()`
 4. Result posted back as `queryResult` → webview paginates display
@@ -105,8 +120,8 @@ Tag `v*` on main triggers `.github/workflows/release.yml`:
 - Creates GitHub Release with the VSIX as attachment and auto-generated release notes
 
 ```powershell
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.0.2
+git push origin v0.0.2
 ```
 
 To publish to VS Code Marketplace:
