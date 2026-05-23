@@ -1,0 +1,28 @@
+# Development tooling
+.vscode/**
+.vscode-test/**
+.claude/**
+.gitignore
+.gitattributes
+CLAUDE.md
+
+# TypeScript source and configs
+src/**
+media/src/**
+**/*.ts
+**/tsconfig*.json
+
+# Build artifacts — keep only the bundled outputs
+out/**
+!out/extension.js
+**/*.map
+
+# Webview scripts — keep bundled JS, exclude sources
+media/src/**
+
+# Keep sql.js (pure WASM — no native compilation required)
+node_modules/**
+!node_modules/sql.js/**
+
+# Package management
+package-lock.json
