@@ -5,6 +5,8 @@
 .gitignore
 .gitattributes
 CLAUDE.md
+.github/**
+sample/**
 
 # TypeScript source and configs
 src/**
