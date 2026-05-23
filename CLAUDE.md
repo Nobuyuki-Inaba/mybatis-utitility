@@ -120,8 +120,8 @@ Tag `v*` on main triggers `.github/workflows/release.yml`:
 - Creates GitHub Release with the VSIX as attachment and auto-generated release notes
 
 ```powershell
-git tag v0.0.2
-git push origin v0.0.2
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 To publish to VS Code Marketplace:
