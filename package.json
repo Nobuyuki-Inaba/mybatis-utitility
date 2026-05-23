@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Nobuyuki-Inaba/mybatis-utitility.git"
+    "url": "https://github.com/Nobuyuki-Inaba/mybatis-utility.git"
   },
   "engines": {
     "vscode": "^1.85.0"
