@@ -12,8 +12,16 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
-  "keywords": ["mybatis", "sql", "java", "database", "mapper"],
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "mybatis",
+    "sql",
+    "java",
+    "database",
+    "mapper"
+  ],
   "icon": "media/icon.png",
   "activationEvents": [],
   "main": "./out/extension.js",
@@ -122,8 +130,13 @@
       "properties": {
         "mybatisUtility.scanFolders": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["**/mapper", "**/repository"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/mapper",
+            "**/repository"
+          ],
           "markdownDescription": "Glob patterns (relative to workspace root) for MyBatis Mapper files. Empty = no scan.\n\n- `**` — entire workspace\n- `src/main/java` — exact folder\n- `src/**` — src and all sub-folders\n- `**/mapper` — any folder named `mapper`\n\nExample: `[\"src/main/java\", \"src/main/resources/mapper\"]`"
         },
         "mybatisUtility.fetchLimit": {
@@ -150,6 +163,7 @@
     "package": "npm run compile && vsce package"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.11.0",
     "@types/pg": "^8.11.0",
     "@types/vscode": "^1.85.0",
@@ -160,6 +174,7 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "js-yaml": "^4.1.1",
     "sql.js": "^1.12.0"
   }
 }

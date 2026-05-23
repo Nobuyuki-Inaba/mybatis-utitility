@@ -1,14 +1,18 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { ConfigManager } from './configManager';
 import { executeQuery } from './dbManager';
 import { buildExecutableSql, defaultParamEntries } from './queryParser';
 import { ParsedQuery, MapperFile, ExtToWebMsg, WebToExtMsg } from './types';
+import { ParamPresetManager } from './paramPresetManager';
 
 export class QueryPanel {
   private static _instance: QueryPanel | undefined;
   private readonly _panel: vscode.WebviewPanel;
   private _disposables: vscode.Disposable[] = [];
   private _currentQuery: ParsedQuery | undefined;
+  private _queryKey = '';
+  private readonly _presetMgr = new ParamPresetManager();
 
   static show(
     extensionUri: vscode.Uri,
@@ -71,10 +75,21 @@ export class QueryPanel {
   private _sendQuery(query: ParsedQuery, mapperFile: MapperFile): void {
     this._currentQuery = query;
     this._panel.title = `Query: ${query.id}`;
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    this._queryKey = `${path.relative(root, mapperFile.filePath).replace(/\\/g, '/')}#${query.id}`;
     const msg: ExtToWebMsg = {
       type: 'setQuery',
       query,
       mapperLabel: mapperFile.label,
+    };
+    this._panel.webview.postMessage(msg);
+    this._postPresets();
+  }
+
+  private _postPresets(): void {
+    const msg: ExtToWebMsg = {
+      type: 'presets',
+      presets: this._presetMgr.getPresets(this._queryKey),
     };
     this._panel.webview.postMessage(msg);
   }
@@ -150,6 +165,16 @@ export class QueryPanel {
         this._sendConnections();
         break;
       }
+
+      case 'savePreset':
+        this._presetMgr.savePreset(this._queryKey, { name: msg.presetName, params: msg.params });
+        this._postPresets();
+        break;
+
+      case 'deletePreset':
+        this._presetMgr.deletePreset(this._queryKey, msg.presetName);
+        this._postPresets();
+        break;
     }
   }
 

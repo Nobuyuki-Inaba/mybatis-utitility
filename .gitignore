@@ -5,3 +5,4 @@ out/
 .claude/
 media/queryPanel.js
 media/configPanel.js
+media/mapperPanel.js

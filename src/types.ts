@@ -70,6 +70,11 @@ export interface ParamEntry {
   type: ParamType;
 }
 
+export interface ParamPreset {
+  name: string;
+  params: ParamEntry[];
+}
+
 // ---------------------------------------------------------------------------
 // Parsed mapper / query items
 // ---------------------------------------------------------------------------
@@ -114,11 +119,14 @@ export type ExtToWebMsg =
   | { type: 'connections'; items: DbConnectionConfig[] }
   | { type: 'connectionSaved' }
   | { type: 'connectionDeleted'; id: string }
-  | { type: 'settings'; fetchLimit: number; pageSize: number };
+  | { type: 'settings'; fetchLimit: number; pageSize: number }
+  | { type: 'presets'; presets: ParamPreset[] };
 
 // Webview → Extension
 export type WebToExtMsg =
   | { type: 'execute'; mode: 'range' | 'all'; params: ParamEntry[]; selectedText?: string; displayedSql?: string; connectionId: string }
   | { type: 'getConnections' }
   | { type: 'saveConnection'; config: NewDbConnectionConfig; password?: string }
-  | { type: 'deleteConnection'; id: string };
+  | { type: 'deleteConnection'; id: string }
+  | { type: 'savePreset'; presetName: string; params: ParamEntry[] }
+  | { type: 'deletePreset'; presetName: string };

@@ -3,7 +3,7 @@
  * Runs inside a VSCode Webview — no Node.js APIs, DOM only.
  */
 
-import type { ExtToWebMsg, WebToExtMsg, ParsedQuery, ParamEntry, ParamType, DbConnectionConfig, QueryResult } from '../../src/types';
+import type { ExtToWebMsg, WebToExtMsg, ParsedQuery, ParamEntry, ParamType, ParamPreset, DbConnectionConfig, QueryResult } from '../../src/types';
 
 declare function acquireVsCodeApi(): {
   postMessage(msg: WebToExtMsg): void;
@@ -19,6 +19,9 @@ let currentQuery: ParsedQuery | null = null;
 let paramEntries: ParamEntry[] = [];
 let connections: DbConnectionConfig[] = [];
 let selectedConnectionId = '';
+
+let presets: ParamPreset[] = [];
+let selectedPresetName = '';
 
 let lastResult: QueryResult | null = null;
 let currentPage = 0;
@@ -45,6 +48,7 @@ function escHtml(s: unknown): string {
 
 function render(): void {
   renderConnectionPicker();
+  renderPresetBar();
   renderParamTable();
 }
 
@@ -56,6 +60,27 @@ function renderConnectionPicker(): void {
         ${escHtml(c.label)} (${escHtml(c.type)})
       </option>`
     ).join('');
+}
+
+function getDisplayedParamNames(): Set<string> {
+  const sql = el<HTMLElement>('query-display')?.textContent ?? '';
+  const names = new Set<string>();
+  for (const m of sql.matchAll(/#\{(\w+)\}/g)) { names.add(m[1]); }
+  return names;
+}
+
+function renderPresetBar(): void {
+  const sel = el<HTMLSelectElement>('preset-select');
+  if (!sel) { return; }
+  sel.innerHTML = '<option value="">-- Select preset --</option>' +
+    presets.map(p =>
+      `<option value="${escHtml(p.name)}" ${p.name === selectedPresetName ? 'selected' : ''}>${escHtml(p.name)}</option>`
+    ).join('');
+  const nameInput = el<HTMLInputElement>('preset-name');
+  const saveBtn = el<HTMLButtonElement>('preset-save');
+  const deleteBtn = el<HTMLButtonElement>('preset-delete');
+  saveBtn.disabled = nameInput.value.trim() === '';
+  deleteBtn.disabled = selectedPresetName === '';
 }
 
 function renderParamTable(): void {
@@ -75,6 +100,7 @@ function renderParamTable(): void {
           value="${escHtml(p.value)}"
           placeholder="${p.type === 'null' ? '(null)' : ''}">
       </td>
+      <td><button class="param-del btn-secondary" data-index="${i}" ${getDisplayedParamNames().has(p.name) ? 'disabled' : ''}>×</button></td>
     </tr>
   `).join('');
 
@@ -89,6 +115,12 @@ function renderParamTable(): void {
     inp.addEventListener('input', () => {
       const i = Number(inp.dataset.index);
       paramEntries[i].value = inp.value;
+    });
+  });
+  tbody.querySelectorAll<HTMLButtonElement>('.param-del').forEach(btn => {
+    btn.addEventListener('click', () => {
+      paramEntries.splice(Number(btn.dataset.index), 1);
+      renderParamTable();
     });
   });
 }
@@ -227,13 +259,25 @@ window.addEventListener('message', (event: MessageEvent<ExtToWebMsg>) => {
     case 'setQuery':
       currentQuery = msg.query;
       paramEntries = msg.query.params.map((name: string) => ({ name, value: '', type: 'string' as ParamType }));
+      presets = [];
+      selectedPresetName = '';
       if (!domReady) {
         pendingSetQuery = msg;
         return;
       }
+      (el<HTMLInputElement>('preset-name')).value = '';
       renderResultPlaceholder();
       renderQuery(msg.query);
       render();
+      break;
+
+    case 'presets':
+      presets = msg.presets;
+      if (!presets.find(p => p.name === selectedPresetName)) {
+        selectedPresetName = '';
+        el<HTMLInputElement>('preset-name').value = '';
+      }
+      renderPresetBar();
       break;
 
     case 'queryResult':
@@ -291,6 +335,51 @@ window.addEventListener('DOMContentLoaded', () => {
 
   el('btn-reset').addEventListener('click', () => {
     if (currentQuery) { el('query-display').textContent = currentQuery.sql; }
+    renderParamTable();
+  });
+
+  el('query-display').addEventListener('input', () => {
+    renderParamTable();
+  });
+
+  el<HTMLSelectElement>('preset-select').addEventListener('change', (e) => {
+    selectedPresetName = (e.target as HTMLSelectElement).value;
+    if (selectedPresetName) {
+      const preset = presets.find(p => p.name === selectedPresetName);
+      if (preset) {
+        for (const entry of paramEntries) {
+          const pp = preset.params.find(p => p.name === entry.name);
+          if (pp) { entry.value = pp.value; entry.type = pp.type; }
+        }
+        renderParamTable();
+      }
+    }
+    renderPresetBar();
+  });
+
+  el<HTMLInputElement>('preset-name').addEventListener('input', () => {
+    renderPresetBar();
+  });
+
+  el<HTMLButtonElement>('preset-save').addEventListener('click', () => {
+    const name = el<HTMLInputElement>('preset-name').value.trim();
+    if (!name) { return; }
+    vscode.postMessage({ type: 'savePreset', presetName: name, params: [...paramEntries] });
+    el<HTMLInputElement>('preset-name').value = '';
+    renderPresetBar();
+  });
+
+  el<HTMLButtonElement>('preset-delete').addEventListener('click', () => {
+    if (!selectedPresetName) { return; }
+    vscode.postMessage({ type: 'deletePreset', presetName: selectedPresetName });
+  });
+
+  el<HTMLButtonElement>('preset-clear-params').addEventListener('click', () => {
+    for (const entry of paramEntries) { entry.value = ''; entry.type = 'string'; }
+    selectedPresetName = '';
+    el<HTMLInputElement>('preset-name').value = '';
+    renderPresetBar();
+    renderParamTable();
   });
   el('btn-export-csv').addEventListener('click', exportCsv);
   el('conn-select').addEventListener('change', (e) => {
@@ -364,6 +453,11 @@ function buildLayout(): string {
   .param-name { font-family: monospace; color: #c678dd; }
   .param-type { width: 90px; }
   .param-value { background: var(--input-bg); color: var(--input-fg); border: 1px solid var(--border); padding: 3px 6px; width: 100%; font-size: var(--font-size); }
+  .param-del { padding: 2px 7px; font-size: 11px; }
+
+  .preset-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .preset-label { font-size: 12px; opacity: 0.7; white-space: nowrap; }
+  #preset-name { background: var(--input-bg); color: var(--input-fg); border: 1px solid var(--border); padding: 3px 6px; font-size: var(--font-size); border-radius: 2px; width: 140px; }
 
   #result-container { margin-top: 14px; }
   .result-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
@@ -399,8 +493,16 @@ function buildLayout(): string {
 <div id="query-display" class="query-box" contenteditable="true" spellcheck="false">(select a query from the Mapper tree)</div>
 
 <div class="section-title">Parameters</div>
+<div class="preset-bar">
+  <span class="preset-label">Preset:</span>
+  <select id="preset-select"><option value="">-- Select preset --</option></select>
+  <input id="preset-name" type="text" placeholder="Preset name" />
+  <button id="preset-save" class="btn-secondary" disabled>Save</button>
+  <button id="preset-delete" class="btn-secondary" disabled>Delete</button>
+  <button id="preset-clear-params" class="btn-secondary">Clear params</button>
+</div>
 <table class="param-table">
-  <thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead>
+  <thead><tr><th>Name</th><th>Type</th><th>Value</th><th></th></tr></thead>
   <tbody id="param-body"></tbody>
 </table>
 
