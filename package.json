@@ -2,7 +2,7 @@
   "name": "mybatis-utility",
   "displayName": "MyBatis Utility",
   "description": "MyBatis query executor — browse Mapper files, fill placeholders, run queries against configured databases",
-  "version": "0.1.0",
+  "version": "0.0.2",
   "publisher": "nobuyuki-inaba",
   "license": "MIT",
   "repository": {
@@ -31,7 +31,8 @@
       "mybatisUtility": [
         {
           "id": "mybatisUtility.mapperView",
-          "name": "Mappers"
+          "name": "Mappers",
+          "type": "webview"
         },
         {
           "id": "mybatisUtility.databaseView",
@@ -39,21 +40,11 @@
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "mybatisUtility.mapperView",
-        "contents": "No scan folders configured.\nSpecify the folders that contain your MyBatis Mapper files.\n[Open Settings](command:workbench.action.openSettings?%5B%22mybatisUtility.scanFolders%22%5D)"
-      }
-    ],
     "commands": [
       {
         "command": "mybatisUtility.refreshMappers",
         "title": "Refresh",
         "icon": "$(refresh)"
-      },
-      {
-        "command": "mybatisUtility.openQuery",
-        "title": "Open Query"
       },
       {
         "command": "mybatisUtility.addDatabase",
@@ -73,6 +64,16 @@
         "command": "mybatisUtility.openSettings",
         "title": "Open MyBatis Utility Settings",
         "icon": "$(settings-gear)"
+      },
+      {
+        "command": "mybatisUtility.setFlatView",
+        "title": "Switch to Flat View",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "mybatisUtility.setTreeView",
+        "title": "Switch to Hierarchical View",
+        "icon": "$(list-tree)"
       }
     ],
     "menus": {
@@ -83,9 +84,19 @@
           "group": "navigation@1"
         },
         {
+          "command": "mybatisUtility.setTreeView",
+          "when": "view == mybatisUtility.mapperView && mybatisUtility.mapperViewMode == 'flat'",
+          "group": "navigation@3"
+        },
+        {
+          "command": "mybatisUtility.setFlatView",
+          "when": "view == mybatisUtility.mapperView && mybatisUtility.mapperViewMode == 'tree'",
+          "group": "navigation@3"
+        },
+        {
           "command": "mybatisUtility.openSettings",
           "when": "view == mybatisUtility.mapperView",
-          "group": "navigation@2"
+          "group": "navigation@4"
         },
         {
           "command": "mybatisUtility.addDatabase",
@@ -132,7 +143,7 @@
   },
   "scripts": {
     "build:ext": "esbuild src/extension.ts --bundle --outfile=out/extension.js --format=cjs --platform=node --external:vscode --external:sql.js --target=node20 --legal-comments=inline",
-    "build:webview": "esbuild media/src/queryPanel.ts --bundle --outfile=media/queryPanel.js --format=iife --target=es2020 && esbuild media/src/configPanel.ts --bundle --outfile=media/configPanel.js --format=iife --target=es2020",
+    "build:webview": "esbuild media/src/queryPanel.ts --bundle --outfile=media/queryPanel.js --format=iife --target=es2020 && esbuild media/src/configPanel.ts --bundle --outfile=media/configPanel.js --format=iife --target=es2020 && esbuild media/src/mapperPanel.ts --bundle --outfile=media/mapperPanel.js --format=iife --target=es2020",
     "build": "npm run compile",
     "compile": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.webview.json --noEmit && npm run build:ext && npm run build:webview",
     "watch": "npm run build:ext -- --watch & npm run build:webview -- --watch",

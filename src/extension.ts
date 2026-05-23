@@ -1,8 +1,7 @@
 import * as vscode from 'vscode';
 import { ConfigManager } from './configManager';
-import { MapperProvider, MapperQueryItem } from './mapperProvider';
+import { MapperWebviewProvider } from './mapperWebviewProvider';
 import { DatabaseProvider, ConnectionItem } from './databaseProvider';
-import { QueryPanel } from './queryPanel';
 import { ConfigPanel } from './configPanel';
 import { setExtensionPath } from './extensionContext';
 import { NewDbConnectionConfig, DbType } from './types';
@@ -20,11 +19,14 @@ export function activate(context: vscode.ExtensionContext): void {
     onDidChangeConnections
   );
 
-  // --- Tree views ---
-  const mapperProvider = new MapperProvider();
+  // --- Mapper webview panel ---
+  const mapperProvider = new MapperWebviewProvider(context.extensionUri, configMgr);
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider('mybatisUtility.mapperView', mapperProvider)
+    vscode.window.registerWebviewViewProvider(MapperWebviewProvider.viewType, mapperProvider)
   );
+
+  // Set initial context key for toggle button display
+  void vscode.commands.executeCommand('setContext', 'mybatisUtility.mapperViewMode', 'flat');
 
   const dbProvider = new DatabaseProvider(configMgr);
   context.subscriptions.push(
@@ -35,12 +37,6 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('mybatisUtility.refreshMappers', () => {
       mapperProvider.refresh();
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('mybatisUtility.openQuery', (item: MapperQueryItem) => {
-      QueryPanel.show(context.extensionUri, configMgr, item.query, item.mapperFile);
     })
   );
 
@@ -61,6 +57,20 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('mybatisUtility.openSettings', () => {
       vscode.commands.executeCommand('workbench.action.openSettings', 'mybatisUtility');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mybatisUtility.setFlatView', () => {
+      mapperProvider.setDisplayMode('flat');
+      void vscode.commands.executeCommand('setContext', 'mybatisUtility.mapperViewMode', 'flat');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mybatisUtility.setTreeView', () => {
+      mapperProvider.setDisplayMode('tree');
+      void vscode.commands.executeCommand('setContext', 'mybatisUtility.mapperViewMode', 'tree');
     })
   );
 
