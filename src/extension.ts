@@ -20,17 +20,22 @@ export function activate(context: vscode.ExtensionContext): void {
     onDidChangeConnections
   );
 
+  // Restore persisted display modes
+  const mapperViewMode = context.globalState.get<'flat' | 'tree'>('mybatisUtility.mapperViewMode', 'flat');
+  const datasetViewMode = context.globalState.get<'flat' | 'tree'>('mybatisUtility.datasetViewMode', 'flat');
+
   // --- Mapper webview panel ---
   const mapperProvider = new MapperWebviewProvider(context.extensionUri, configMgr);
+  mapperProvider.setDisplayMode(mapperViewMode);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MapperWebviewProvider.viewType, mapperProvider)
   );
-
-  // Set initial context key for toggle button display
-  void vscode.commands.executeCommand('setContext', 'mybatisUtility.mapperViewMode', 'flat');
+  void vscode.commands.executeCommand('setContext', 'mybatisUtility.mapperViewMode', mapperViewMode);
 
   // --- Dataset webview panel ---
   const datasetProvider = new DatasetWebviewProvider(context.extensionUri, configMgr);
+  datasetProvider.setDisplayMode(datasetViewMode);
+  void vscode.commands.executeCommand('setContext', 'mybatisUtility.datasetViewMode', datasetViewMode);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(DatasetWebviewProvider.viewType, datasetProvider)
   );
@@ -77,6 +82,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mybatisUtility.setFlatView', () => {
       mapperProvider.setDisplayMode('flat');
       void vscode.commands.executeCommand('setContext', 'mybatisUtility.mapperViewMode', 'flat');
+      void context.globalState.update('mybatisUtility.mapperViewMode', 'flat');
     })
   );
 
@@ -84,6 +90,23 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('mybatisUtility.setTreeView', () => {
       mapperProvider.setDisplayMode('tree');
       void vscode.commands.executeCommand('setContext', 'mybatisUtility.mapperViewMode', 'tree');
+      void context.globalState.update('mybatisUtility.mapperViewMode', 'tree');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mybatisUtility.setDatasetFlatView', () => {
+      datasetProvider.setDisplayMode('flat');
+      void vscode.commands.executeCommand('setContext', 'mybatisUtility.datasetViewMode', 'flat');
+      void context.globalState.update('mybatisUtility.datasetViewMode', 'flat');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mybatisUtility.setDatasetTreeView', () => {
+      datasetProvider.setDisplayMode('tree');
+      void vscode.commands.executeCommand('setContext', 'mybatisUtility.datasetViewMode', 'tree');
+      void context.globalState.update('mybatisUtility.datasetViewMode', 'tree');
     })
   );
 

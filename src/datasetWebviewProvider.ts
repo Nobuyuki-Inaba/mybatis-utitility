@@ -14,6 +14,7 @@ export class DatasetWebviewProvider implements vscode.WebviewViewProvider {
 
   private _view?: vscode.WebviewView;
   private _scanning = false;
+  private _displayMode: 'flat' | 'tree' = 'flat';
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
@@ -42,11 +43,22 @@ export class DatasetWebviewProvider implements vscode.WebviewViewProvider {
       }
     });
 
+    this._sendDisplayMode();
     void this._scan();
   }
 
   refresh(): void {
     void this._scan();
+  }
+
+  setDisplayMode(mode: 'flat' | 'tree'): void {
+    this._displayMode = mode;
+    this._sendDisplayMode();
+  }
+
+  private _sendDisplayMode(): void {
+    if (!this._view) { return; }
+    void this._view.webview.postMessage({ type: 'setDisplayMode', mode: this._displayMode });
   }
 
   private async _scan(): Promise<void> {
@@ -93,34 +105,32 @@ export class DatasetWebviewProvider implements vscode.WebviewViewProvider {
       color: var(--vscode-foreground);
       background: var(--vscode-sideBar-background);
     }
-    #toolbar {
+    #filter-wrap {
       position: sticky;
       top: 0;
       z-index: 10;
       padding: 6px 8px;
       background: var(--vscode-sideBar-background);
       border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
-      display: flex;
-      align-items: center;
-      gap: 6px;
     }
-    #toolbar button {
-      background: var(--vscode-button-secondaryBackground);
-      color: var(--vscode-button-secondaryForeground);
-      border: none;
-      padding: 3px 8px;
+    #filter-input {
+      width: 100%;
+      padding: 4px 8px;
       font-size: var(--vscode-font-size);
-      cursor: pointer;
+      color: var(--vscode-input-foreground);
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-input-border, transparent);
       border-radius: 2px;
+      outline: none;
     }
-    #toolbar button:hover { filter: brightness(1.15); }
+    #filter-input:focus { border-color: var(--vscode-focusBorder); }
     #list { padding: 4px 0; }
     .empty {
       padding: 12px 16px;
       color: var(--vscode-descriptionForeground);
       line-height: 1.6;
     }
-    .file-row {
+    .file-row, .folder-row {
       display: flex;
       align-items: center;
       padding: 2px 8px;
@@ -130,6 +140,18 @@ export class DatasetWebviewProvider implements vscode.WebviewViewProvider {
       height: 22px;
     }
     .file-row:hover { background: var(--vscode-list-hoverBackground); }
+    .file-row.indent { padding-left: 24px; }
+    .folder-row {
+      font-weight: 600;
+      color: var(--vscode-sideBarSectionHeader-foreground);
+      gap: 6px;
+    }
+    .folder-chevron {
+      font-size: 10px;
+      width: 12px;
+      flex-shrink: 0;
+      color: var(--vscode-descriptionForeground);
+    }
     .type-badge {
       font-size: 9px;
       font-weight: 700;
@@ -155,8 +177,8 @@ export class DatasetWebviewProvider implements vscode.WebviewViewProvider {
   </style>
 </head>
 <body>
-  <div id="toolbar">
-    <button id="btn-refresh">&#x21BB; Refresh</button>
+  <div id="filter-wrap">
+    <input id="filter-input" type="text" placeholder="Filter dataset files…" />
   </div>
   <div id="list"></div>
   <script nonce="${nonce}" src="${scriptUri}"></script>

@@ -10,7 +10,7 @@ VSCode extension for MyBatis developers. Browse Mapper files, fill query paramet
 - **Query panel** — Click a query to open it, edit SQL inline, fill typed parameters (`#{param}`), and execute
 - **Live SQL preview** — Click **Preview SQL** to see the final SQL with all parameters substituted inline, before executing
 - **Explain plan** — Click **Explain** to run `EXPLAIN` on the current SQL and inspect the query plan
-- **Dataset loader** — New **Dataset** panel scans for CSV / XLSX fixture files in your workspace. Click any file to open the loader, preview data, map sheets to database tables, and bulk-load with one click (clears and reloads the target table)
+- **Dataset loader** — **Dataset** panel scans for CSV / XLSX fixture files in your workspace. Filter files in real time with the search input, switch between flat and hierarchical views, click any file to open the loader, preview data, map sheets to database tables, and bulk-load with one click (clears and reloads the target table)
 - **Parameter presets** — Save named sets of parameter values to `.vscode/mybatis-utility/params.yaml`. Load them from a dropdown to re-fill values instantly. The file can be committed and shared across the team
 - **Multi-database support** — SQLite, PostgreSQL, MySQL (extensible driver registry)
 - **Pagination** — Large result sets paginated (configurable page size)
@@ -80,7 +80,7 @@ Presets are saved to `.vscode/mybatis-utility/params.yaml` in your workspace. Ad
 
 ### 4. Load test data (Dataset panel)
 
-The **Dataset** panel (in the sidebar) automatically scans for CSV and XLSX fixture files in common locations (`fixtures/`, `testdata/`, `dataset/`, `src/test/resources/`, etc.).
+The **Dataset** panel (in the sidebar) automatically scans for CSV and XLSX fixture files in common locations (`fixtures/`, `testdata/`, `dataset/`, `src/test/resources/`, etc.). Use the filter input at the top to narrow results in real time, and use the list/tree icon in the title bar to switch between flat and hierarchical views. Both view preferences are saved across sessions.
 
 1. Click any file in the **Dataset** panel to open the loader
 2. Select a sheet (XLSX) or the file (CSV) and enter the target table name

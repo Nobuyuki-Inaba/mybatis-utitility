@@ -2,7 +2,7 @@
   "name": "mybatis-utility",
   "displayName": "MyBatis Utility",
   "description": "MyBatis query executor — browse Mapper files, fill placeholders, run queries against configured databases",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "publisher": "nobuyuki-inaba",
   "license": "MIT",
   "repository": {
@@ -92,6 +92,16 @@
         "command": "mybatisUtility.refreshDataset",
         "title": "Refresh",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "mybatisUtility.setDatasetFlatView",
+        "title": "Switch to Flat View",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "mybatisUtility.setDatasetTreeView",
+        "title": "Switch to Hierarchical View",
+        "icon": "$(list-tree)"
       }
     ],
     "menus": {
@@ -120,6 +130,16 @@
           "command": "mybatisUtility.refreshDataset",
           "when": "view == mybatisUtility.datasetView",
           "group": "navigation@1"
+        },
+        {
+          "command": "mybatisUtility.setDatasetTreeView",
+          "when": "view == mybatisUtility.datasetView && mybatisUtility.datasetViewMode == 'flat'",
+          "group": "navigation@3"
+        },
+        {
+          "command": "mybatisUtility.setDatasetFlatView",
+          "when": "view == mybatisUtility.datasetView && mybatisUtility.datasetViewMode == 'tree'",
+          "group": "navigation@3"
         },
         {
           "command": "mybatisUtility.addDatabase",

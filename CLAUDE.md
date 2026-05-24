@@ -35,7 +35,7 @@ src/
   databaseProvider.ts       # TreeDataProvider for the Databases sidebar view
   dbManager.ts              # driver registry — registerDriver(type, driver); also bulkLoad()
   extensionContext.ts       # setExtensionPath() / getExtensionPath() for sql.js WASM location
-  datasetWebviewProvider.ts # WebviewViewProvider — Dataset panel (scans CSV/XLSX fixture files)
+  datasetWebviewProvider.ts # WebviewViewProvider — Dataset panel (filter input, flat/tree toggle, scans CSV/XLSX fixture files)
   datasetLoaderPanel.ts     # WebviewPanel for bulk-loading a fixture file into a table (singleton)
   datasetLoader.ts          # readSheetData() via ExcelJS; loadSheetToDb() via dbManager.bulkLoad()
   datasetScanner.ts         # scanDatasetFiles() — finds CSV/XLSX under configured directories
@@ -48,7 +48,7 @@ media/src/
   queryPanel.ts             # webview script — DOM only, no Node APIs; Preview SQL + Explain buttons
   configPanel.ts            # webview script for DB config panel
   mapperPanel.ts            # webview script for Mappers panel (filter, flat/tree render)
-  datasetPanel.ts           # webview script for Dataset panel (lists CSV/XLSX files)
+  datasetPanel.ts           # webview script for Dataset panel (filter input, flat/tree render, lists CSV/XLSX files)
   datasetLoaderPanel.ts     # webview script for Dataset Loader (preview table, sheet→table mapping)
 
 sample/                     # test fixtures
@@ -105,7 +105,7 @@ Mapper panel (ad-hoc, not in types.ts):
 - Webview → extension: `{ type: 'openQuery', query, mapperFile }`, `{ type: 'openSettings' }`
 
 Dataset panel (`DatasetToWebMsg` / `WebToDatasetMsg` in `types.ts`):
-- Extension → webview: `{ type: 'setFiles', items: DatasetFile[] }`
+- Extension → webview: `{ type: 'setFiles', items: DatasetFile[] }`, `{ type: 'setDisplayMode', mode }`
 - Webview → extension: `{ type: 'openLoader', file }`, `{ type: 'refresh' }`
 
 Dataset loader panel (`LoaderExtToWebMsg` / `LoaderWebToExtMsg` in `types.ts`):
