@@ -30,24 +30,31 @@ src/
   mapperProvider.ts         # TreeDataProvider helpers (FolderItem, MapperFileItem, MapperQueryItem)
   mapperScanner.ts          # pure parsing logic (no VSCode API — unit-testable via FileReader interface)
   queryParser.ts            # extract #{} placeholders, buildExecutableSql(), formatValue()
-  queryPanel.ts             # WebviewPanel for query execution (singleton)
+  queryPanel.ts             # WebviewPanel for query execution (singleton); handles execute/explain/preview
   configPanel.ts            # WebviewPanel for DB connection management (singleton)
   databaseProvider.ts       # TreeDataProvider for the Databases sidebar view
-  dbManager.ts              # driver registry — registerDriver(type, driver)
+  dbManager.ts              # driver registry — registerDriver(type, driver); also bulkLoad()
   extensionContext.ts       # setExtensionPath() / getExtensionPath() for sql.js WASM location
+  datasetWebviewProvider.ts # WebviewViewProvider — Dataset panel (scans CSV/XLSX fixture files)
+  datasetLoaderPanel.ts     # WebviewPanel for bulk-loading a fixture file into a table (singleton)
+  datasetLoader.ts          # readSheetData() via ExcelJS; loadSheetToDb() via dbManager.bulkLoad()
+  datasetScanner.ts         # scanDatasetFiles() — finds CSV/XLSX under configured directories
   drivers/
-    sqlite.ts               # sql.js (pure WASM, no native build required)
-    postgresql.ts           # pg (pure JS)
-    mysql.ts                # mysql2/promise (pure JS)
+    sqlite.ts               # sql.js (pure WASM, no native build required); implements bulkLoad
+    postgresql.ts           # pg (pure JS); implements bulkLoad
+    mysql.ts                # mysql2/promise (pure JS); implements bulkLoad
 
 media/src/
-  queryPanel.ts             # webview script — DOM only, no Node APIs
+  queryPanel.ts             # webview script — DOM only, no Node APIs; Preview SQL + Explain buttons
   configPanel.ts            # webview script for DB config panel
   mapperPanel.ts            # webview script for Mappers panel (filter, flat/tree render)
+  datasetPanel.ts           # webview script for Dataset panel (lists CSV/XLSX files)
+  datasetLoaderPanel.ts     # webview script for Dataset Loader (preview table, sheet→table mapping)
 
 sample/                     # test fixtures
   src/main/java/…/          # Java @Mapper samples (SampleMapper, UserMapper)
   src/main/resources/mapper/  # XML mapper samples
+  fixtures/                 # sample CSV/XLSX files for dataset loader testing
   test.db                   # SQLite test database (sample + users + wide_table)
 ```
 
@@ -70,6 +77,9 @@ sample/                     # test fixtures
 **CSV export (all rows, bypassing fetchLimit)**:
 The current Export CSV exports fetched rows (up to fetchLimit). For true unlimited export: add `{ type: 'exportCsvAll' }` to `WebToExtMsg`, store last params/sql in `QueryPanel._lastExecContext`, re-run `executeQuery` with `maxRows = Infinity`, write file via `vscode.window.showSaveDialog`.
 
+**Adding a new bulk-loadable driver**:
+Each driver must also export `bulkLoad(config, password, tableName, columns, rows)` which deletes all rows from the table and re-inserts them. See existing drivers for the pattern. Register with `registerDriver()` in `dbManager.ts`.
+
 ### Row limits
 - `fetchLimit` (default 5000): read from `mybatisUtility.fetchLimit` setting at execute time
 - `pageSize` (default 200): sent to webview via `settings` message; webview re-renders on change
@@ -88,18 +98,30 @@ The current Export CSV exports fetched rows (up to fetchLimit). For true unlimit
 
 Query/Config panels (`src/types.ts`):
 - `ExtToWebMsg` — extension → webview (setQuery, queryResult, queryError, connections, connectionSaved, connectionDeleted, **settings**)
-- `WebToExtMsg` — webview → extension (execute, getConnections, saveConnection, deleteConnection)
+- `WebToExtMsg` — extension ← webview (execute `{mode:'all'|'range'|'explain'}`, getConnections, saveConnection, deleteConnection)
 
 Mapper panel (ad-hoc, not in types.ts):
 - Extension → webview: `{ type: 'setMappers', items: MapperFile[] }`, `{ type: 'setDisplayMode', mode }`
 - Webview → extension: `{ type: 'openQuery', query, mapperFile }`, `{ type: 'openSettings' }`
 
+Dataset panel (`DatasetToWebMsg` / `WebToDatasetMsg` in `types.ts`):
+- Extension → webview: `{ type: 'setFiles', items: DatasetFile[] }`
+- Webview → extension: `{ type: 'openLoader', file }`, `{ type: 'refresh' }`
+
+Dataset loader panel (`LoaderExtToWebMsg` / `LoaderWebToExtMsg` in `types.ts`):
+- Extension → webview: `init`, `preview { sheet, columns, rows }`, `loadResult { success, message }`
+- Webview → extension: `getPreview { sheet }`, `load { connectionId, mappings }`
+
 ### SQL execution flow
 
 1. User clicks query in Mappers panel → webview posts `openQuery` → `QueryPanel.show()`
-2. User clicks execute → webview posts `execute` with `displayedSql` (editable div content)
-3. Extension reads `fetchLimit` from settings, calls `buildExecutableSql()` → `executeQuery()`
+2. User clicks execute → webview posts `execute` with `displayedSql` (editable div content) and `mode` (`'all'` | `'range'` | `'explain'`)
+3. Extension reads `fetchLimit` from settings, calls `buildExecutableSql()` → `executeQuery()` or `explainQuery()`
 4. Result posted back as `queryResult` → webview paginates display
+
+**Live SQL preview** is entirely client-side: the webview's `buildPreviewSql()` substitutes parameters using `_formatPreviewValue()` and renders the result as `<pre>`. No round-trip to the extension.
+
+**Explain plan**: `mode: 'explain'` in `execute` message → extension calls `explainQuery(conn, password, sql)` in `dbManager.ts` (each driver implements its own `EXPLAIN` syntax) → result returned as a normal `queryResult` table.
 
 ### Webview lifecycle
 
@@ -120,8 +142,8 @@ Tag `v*` on main triggers `.github/workflows/release.yml`:
 - Creates GitHub Release with the VSIX as attachment and auto-generated release notes
 
 ```powershell
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 To publish to VS Code Marketplace:
