@@ -8,6 +8,9 @@ VSCode extension for MyBatis developers. Browse Mapper files, fill query paramet
 
 - **Mapper panel** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type. Includes a real-time filter input and flat / hierarchical view toggle
 - **Query panel** — Click a query to open it, edit SQL inline, fill typed parameters (`#{param}`), and execute
+- **Live SQL preview** — Click **Preview SQL** to see the final SQL with all parameters substituted inline, before executing
+- **Explain plan** — Click **Explain** to run `EXPLAIN` on the current SQL and inspect the query plan
+- **Dataset loader** — New **Dataset** panel scans for CSV / XLSX fixture files in your workspace. Click any file to open the loader, preview data, map sheets to database tables, and bulk-load with one click (clears and reloads the target table)
 - **Parameter presets** — Save named sets of parameter values to `.vscode/mybatis-utility/params.yaml`. Load them from a dropdown to re-fill values instantly. The file can be committed and shared across the team
 - **Multi-database support** — SQLite, PostgreSQL, MySQL (extensible driver registry)
 - **Pagination** — Large result sets paginated (configurable page size)
@@ -63,6 +66,10 @@ Passwords are stored in VSCode's Secret Storage (never in plain text).
 
 To execute only part of the SQL, select it and press **Ctrl+Shift+Enter** (or click **execute(range)**).
 
+Click **Preview SQL** to see the fully-substituted SQL without executing it — useful for reviewing the final query before sending it to the database.
+
+Click **Explain** to run `EXPLAIN` on the current SQL and display the query plan returned by the database.
+
 If you edited the SQL and want to revert it, click **reset SQL**.
 
 #### Parameter presets
@@ -70,6 +77,17 @@ If you edited the SQL and want to revert it, click **reset SQL**.
 To save the current parameter values as a preset, type a name in the **Preset name** field and click **Save**. To restore saved values, select a preset from the dropdown. Click **Delete** to remove the selected preset, or **Clear params** to reset all values.
 
 Presets are saved to `.vscode/mybatis-utility/params.yaml` in your workspace. Add the file to `.gitignore` to keep values local, or commit it to share with your team.
+
+### 4. Load test data (Dataset panel)
+
+The **Dataset** panel (in the sidebar) automatically scans for CSV and XLSX fixture files in common locations (`fixtures/`, `testdata/`, `dataset/`, `src/test/resources/`, etc.).
+
+1. Click any file in the **Dataset** panel to open the loader
+2. Select a sheet (XLSX) or the file (CSV) and enter the target table name
+3. Click **Preview** to inspect the first 100 rows before loading
+4. Click **Load** — this will **delete all existing rows** from the target table and re-insert data from the file
+
+> **Warning**: The load operation is destructive. Always use it against a development/test database, not production.
 
 ## Keyboard Shortcuts
 
@@ -85,6 +103,7 @@ Presets are saved to `.vscode/mybatis-utility/params.yaml` in your workspace. Ad
 | `mybatisUtility.scanFolders` | `["**/mapper", "**/repository"]` | Glob patterns for mapper file search. Empty = no scan. |
 | `mybatisUtility.fetchLimit` | `5000` | Max rows fetched per query. Reduce to save memory. |
 | `mybatisUtility.pageSize` | `200` | Rows displayed per page in the result panel. |
+| `mybatisUtility.datasetDirectories` | `["**/fixture/**", "**/fixtures/**", ...]` | Glob patterns for fixture files shown in the Dataset panel. |
 
 Open settings with the **gear icon** (⚙) in the Mappers panel title bar.
 
