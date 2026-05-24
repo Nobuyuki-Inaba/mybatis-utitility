@@ -124,9 +124,47 @@ export type ExtToWebMsg =
 
 // Webview → Extension
 export type WebToExtMsg =
-  | { type: 'execute'; mode: 'range' | 'all'; params: ParamEntry[]; selectedText?: string; displayedSql?: string; connectionId: string }
+  | { type: 'execute'; mode: 'range' | 'all' | 'explain'; params: ParamEntry[]; selectedText?: string; displayedSql?: string; connectionId: string }
   | { type: 'getConnections' }
   | { type: 'saveConnection'; config: NewDbConnectionConfig; password?: string }
   | { type: 'deleteConnection'; id: string }
   | { type: 'savePreset'; presetName: string; params: ParamEntry[] }
   | { type: 'deletePreset'; presetName: string };
+
+// ---------------------------------------------------------------------------
+// Dataset panel
+// ---------------------------------------------------------------------------
+
+export interface DatasetFile {
+  path: string;
+  label: string;
+  fileType: 'csv' | 'xlsx';
+  /** xlsx: sheet names; csv: [basename without extension] */
+  sheets: string[];
+}
+
+export interface SheetMapping {
+  sheetName: string;
+  tableName: string;
+  enabled: boolean;
+}
+
+// Extension → Dataset sidebar webview
+export type DatasetToWebMsg =
+  | { type: 'setFiles'; items: DatasetFile[] };
+
+// Dataset sidebar webview → Extension
+export type WebToDatasetMsg =
+  | { type: 'openLoader'; file: DatasetFile }
+  | { type: 'refresh' };
+
+// Extension → Dataset loader panel webview
+export type LoaderExtToWebMsg =
+  | { type: 'init'; file: DatasetFile; connections: DbConnectionConfig[] }
+  | { type: 'preview'; sheet: string; columns: string[]; rows: unknown[][] }
+  | { type: 'loadResult'; success: boolean; message: string };
+
+// Dataset loader panel webview → Extension
+export type LoaderWebToExtMsg =
+  | { type: 'getPreview'; sheet: string }
+  | { type: 'load'; connectionId: string; mappings: SheetMapping[] };

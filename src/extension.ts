@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ConfigManager } from './configManager';
 import { MapperWebviewProvider } from './mapperWebviewProvider';
+import { DatasetWebviewProvider } from './datasetWebviewProvider';
 import { DatabaseProvider, ConnectionItem } from './databaseProvider';
 import { ConfigPanel } from './configPanel';
 import { setExtensionPath } from './extensionContext';
@@ -28,6 +29,12 @@ export function activate(context: vscode.ExtensionContext): void {
   // Set initial context key for toggle button display
   void vscode.commands.executeCommand('setContext', 'mybatisUtility.mapperViewMode', 'flat');
 
+  // --- Dataset webview panel ---
+  const datasetProvider = new DatasetWebviewProvider(context.extensionUri, configMgr);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(DatasetWebviewProvider.viewType, datasetProvider)
+  );
+
   const dbProvider = new DatabaseProvider(configMgr);
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider('mybatisUtility.databaseView', dbProvider)
@@ -37,6 +44,12 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('mybatisUtility.refreshMappers', () => {
       mapperProvider.refresh();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mybatisUtility.refreshDataset', () => {
+      datasetProvider.refresh();
     })
   );
 
@@ -87,11 +100,14 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // Re-scan when the user changes mybatisUtility.scanFolders
+  // Re-scan when relevant settings change
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(e => {
       if (e.affectsConfiguration('mybatisUtility.scanFolders')) {
         mapperProvider.refresh();
+      }
+      if (e.affectsConfiguration('mybatisUtility.datasetDirectories')) {
+        datasetProvider.refresh();
       }
     })
   );

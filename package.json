@@ -43,6 +43,11 @@
           "type": "webview"
         },
         {
+          "id": "mybatisUtility.datasetView",
+          "name": "Dataset",
+          "type": "webview"
+        },
+        {
           "id": "mybatisUtility.databaseView",
           "name": "Databases"
         }
@@ -82,6 +87,11 @@
         "command": "mybatisUtility.setTreeView",
         "title": "Switch to Hierarchical View",
         "icon": "$(list-tree)"
+      },
+      {
+        "command": "mybatisUtility.refreshDataset",
+        "title": "Refresh",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -105,6 +115,11 @@
           "command": "mybatisUtility.openSettings",
           "when": "view == mybatisUtility.mapperView",
           "group": "navigation@4"
+        },
+        {
+          "command": "mybatisUtility.refreshDataset",
+          "when": "view == mybatisUtility.datasetView",
+          "group": "navigation@1"
         },
         {
           "command": "mybatisUtility.addDatabase",
@@ -150,13 +165,29 @@
           "default": 200,
           "minimum": 1,
           "markdownDescription": "Number of rows displayed per page in the query result panel."
+        },
+        "mybatisUtility.datasetDirectories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/fixture/**",
+            "**/fixtures/**",
+            "**/testdata/**",
+            "**/test-data/**",
+            "**/dataset/**",
+            "**/datasets/**",
+            "**/src/test/resources/**"
+          ],
+          "markdownDescription": "Glob patterns for discovering dataset (fixture) CSV and Excel files in the workspace. Only files under matching directories are shown in the Dataset panel."
         }
       }
     }
   },
   "scripts": {
     "build:ext": "esbuild src/extension.ts --bundle --outfile=out/extension.js --format=cjs --platform=node --external:vscode --external:sql.js --target=node20 --legal-comments=inline",
-    "build:webview": "esbuild media/src/queryPanel.ts --bundle --outfile=media/queryPanel.js --format=iife --target=es2020 && esbuild media/src/configPanel.ts --bundle --outfile=media/configPanel.js --format=iife --target=es2020 && esbuild media/src/mapperPanel.ts --bundle --outfile=media/mapperPanel.js --format=iife --target=es2020",
+    "build:webview": "esbuild media/src/queryPanel.ts --bundle --outfile=media/queryPanel.js --format=iife --target=es2020 && esbuild media/src/configPanel.ts --bundle --outfile=media/configPanel.js --format=iife --target=es2020 && esbuild media/src/mapperPanel.ts --bundle --outfile=media/mapperPanel.js --format=iife --target=es2020 && esbuild media/src/datasetPanel.ts --bundle --outfile=media/datasetPanel.js --format=iife --target=es2020 && esbuild media/src/datasetLoaderPanel.ts --bundle --outfile=media/datasetLoaderPanel.js --format=iife --target=es2020",
     "build": "npm run compile",
     "compile": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.webview.json --noEmit && npm run build:ext && npm run build:webview",
     "watch": "npm run build:ext -- --watch & npm run build:webview -- --watch",
@@ -166,6 +197,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.11.0",
     "@types/pg": "^8.11.0",
+    "@types/pg-copy-streams": "^1.2.5",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^2.24.0",
     "esbuild": "^0.28.0",
@@ -174,7 +206,9 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "js-yaml": "^4.1.1",
+    "pg-copy-streams": "^7.0.0",
     "sql.js": "^1.12.0"
   }
 }
