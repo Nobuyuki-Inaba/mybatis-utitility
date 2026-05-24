@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ConfigManager } from './configManager';
-import { executeQuery } from './dbManager';
+import { executeQuery, explainQuery } from './dbManager';
 import { buildExecutableSql, defaultParamEntries } from './queryParser';
 import { ParsedQuery, MapperFile, ExtToWebMsg, WebToExtMsg } from './types';
 import { ParamPresetManager } from './paramPresetManager';
@@ -141,7 +141,9 @@ export class QueryPanel {
         }
         try {
           const fetchLimit = vscode.workspace.getConfiguration('mybatisUtility').get<number>('fetchLimit', 5000);
-          const result = await executeQuery(conn, password, execSql, fetchLimit);
+          const result = msg.mode === 'explain'
+            ? await explainQuery(conn, password, execSql)
+            : await executeQuery(conn, password, execSql, fetchLimit);
           const resMsg: ExtToWebMsg = { type: 'queryResult', result };
           this._panel.webview.postMessage(resMsg);
         } catch (err) {

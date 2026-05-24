@@ -6,3 +6,5 @@ out/
 media/queryPanel.js
 media/configPanel.js
 media/mapperPanel.js
+media/datasetPanel.js
+media/datasetLoaderPanel.js

@@ -224,10 +224,51 @@ function exportCsv(): void {
 }
 
 // ---------------------------------------------------------------------------
+// SQL preview (client-side substitution, shown in result area on button click)
+// ---------------------------------------------------------------------------
+
+function _formatPreviewValue(entry: ParamEntry): string {
+  const { value, type } = entry;
+  switch (type as ParamType) {
+    case 'null':    return 'NULL';
+    case 'number':  return value === '' ? 'NULL' : value;
+    case 'boolean':
+      if (value === '' || value.toLowerCase() === 'null') { return 'NULL'; }
+      return ['true', '1', 'yes'].includes(value.toLowerCase()) ? 'TRUE' : 'FALSE';
+    case 'date':
+      return value === '' ? 'NULL' : `DATE '${value.replace(/'/g, "''")}'`;
+    case 'string':
+    default:
+      return value === '' ? 'NULL' : `'${value.replace(/'/g, "''")}'`;
+  }
+}
+
+function buildPreviewSql(sqlTemplate: string, params: ParamEntry[]): string {
+  const map = new Map(params.map(p => [p.name, p]));
+  return sqlTemplate.replace(/[#$]\{([^}]+)\}/g, (_, raw) => {
+    const name = raw.split(',')[0].trim();
+    const entry = map.get(name);
+    return entry ? _formatPreviewValue(entry) : 'NULL';
+  });
+}
+
+function showPreview(): void {
+  const sqlTemplate = (el('query-display') as HTMLElement).textContent ?? '';
+  const sql = buildPreviewSql(sqlTemplate, paramEntries);
+  lastResult = null;
+  el('result-info').textContent = 'Preview SQL (parameters substituted)';
+  el('result-info').className = 'result-info';
+  el('result-table-wrap').innerHTML = `<pre class="preview-sql">${escHtml(sql)}</pre>`;
+  el('result-pagination').innerHTML = '';
+  el('btn-export-csv').style.display = 'none';
+  el('result-container').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ---------------------------------------------------------------------------
 // Execute
 // ---------------------------------------------------------------------------
 
-function execute(mode: 'range' | 'all'): void {
+function execute(mode: 'range' | 'all' | 'explain'): void {
   if (!currentQuery) { return; }
   const selectedText = mode === 'range' ? getSelection()?.toString() ?? '' : '';
   const displayedSql = (el('query-display') as HTMLElement).textContent ?? '';
@@ -322,6 +363,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
   el('btn-exec-range').addEventListener('click', () => execute('range'));
   el('btn-exec-all').addEventListener('click', () => execute('all'));
+  el('btn-exec-explain').addEventListener('click', () => execute('explain'));
+  el('btn-preview-sql').addEventListener('click', () => showPreview());
 
   document.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter' && e.ctrlKey && e.shiftKey) {
@@ -439,7 +482,8 @@ function buildLayout(): string {
     background: var(--input-bg); border: 1px solid var(--border);
     padding: 10px; font-family: 'Consolas', 'Courier New', monospace; font-size: 13px;
     white-space: pre-wrap; word-break: break-all;
-    min-height: 80px; margin-bottom: 14px;
+    min-height: 80px; max-height: 50vh; margin-bottom: 14px;
+    overflow-y: auto; resize: vertical;
     user-select: text; cursor: text;
   }
 
@@ -478,11 +522,19 @@ function buildLayout(): string {
     border-radius: 3px; padding: 1px 4px; margin-left: 4px; line-height: 1.4;
     vertical-align: middle; white-space: nowrap;
   }
+
+  .preview-sql {
+    font-family: 'Consolas', 'Courier New', monospace; font-size: 12px;
+    color: #98c379; white-space: pre-wrap; word-break: break-all;
+    padding: 8px 10px; user-select: text;
+  }
 </style>
 
 <div class="toolbar">
   <button id="btn-exec-all">execute(all)<kbd>Ctrl+Enter</kbd></button>
   <button id="btn-exec-range">execute(range)<kbd>Ctrl+&#x21E7;+Enter</kbd></button>
+  <button id="btn-exec-explain" class="btn-secondary">Explain</button>
+  <button id="btn-preview-sql" class="btn-secondary">Preview SQL</button>
   <button id="btn-reset" class="btn-secondary">reset SQL</button>
   <select id="conn-select" style="min-width:220px"><option value="">-- select database --</option></select>
 </div>
