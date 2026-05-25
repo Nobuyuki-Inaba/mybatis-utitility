@@ -7,7 +7,7 @@ import { ConfigPanel } from './configPanel';
 import { setExtensionPath } from './extensionContext';
 import { NewDbConnectionConfig, DbType } from './types';
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   setExtensionPath(context.extensionPath);
 
   // --- Shared services ---
@@ -30,12 +30,12 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MapperWebviewProvider.viewType, mapperProvider)
   );
-  void vscode.commands.executeCommand('setContext', 'mybatisUtility.mapperViewMode', mapperViewMode);
+  await vscode.commands.executeCommand('setContext', 'mybatisUtility.mapperViewMode', mapperViewMode);
 
   // --- Dataset webview panel ---
   const datasetProvider = new DatasetWebviewProvider(context.extensionUri, configMgr);
   datasetProvider.setDisplayMode(datasetViewMode);
-  void vscode.commands.executeCommand('setContext', 'mybatisUtility.datasetViewMode', datasetViewMode);
+  await vscode.commands.executeCommand('setContext', 'mybatisUtility.datasetViewMode', datasetViewMode);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(DatasetWebviewProvider.viewType, datasetProvider)
   );

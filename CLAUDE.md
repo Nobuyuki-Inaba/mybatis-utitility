@@ -16,8 +16,14 @@ The build is split into two esbuild passes:
 - **Webviews** (`media/src/*.ts` → `media/*.js`): IIFE for browser, no Node APIs
 
 Type-checking uses two tsconfig files to handle the DOM / Node split:
-- `tsconfig.build.json` — Node types, `src/` only
+- `tsconfig.build.json` — Node types, `src/` only (excludes `test/`)
 - `tsconfig.webview.json` — DOM types, `media/src/` + `src/types.ts`, `rootDir: "."`
+- `tsconfig.test.json` — Node types + jest, includes `src/` + `test/`, `moduleResolution: node`
+
+Unit tests run with jest + ts-jest:
+```powershell
+npm test    # runs test/**/*.test.ts
+```
 
 ## Key files
 
@@ -46,11 +52,14 @@ src/
     mysql.ts                # mysql2/promise (pure JS); implements bulkLoad
 
 media/src/
-  queryPanel.ts             # webview script — DOM only, no Node APIs; Preview SQL + Explain buttons
+  queryPanel.ts             # webview script — DOM only, no Node APIs; Preview SQL + Explain buttons; SQL syntax highlighting via highlight.js (hljs.highlight(sql, {language:'sql'}))
   configPanel.ts            # webview script for DB config panel
   mapperPanel.ts            # webview script for Mappers panel (filter, flat/tree render)
   datasetPanel.ts           # webview script for Dataset panel (filter input, flat/tree render, lists CSV/XLSX files)
   datasetLoaderPanel.ts     # webview script for Dataset Loader (preview table, sheet→table mapping)
+
+test/
+  queryParser.test.ts       # unit tests for queryParser.ts (parseJavaMapper, parseJavaMapperMethods, parseXmlMapper, extractPlaceholders, buildExecutableSql) — not included in VSIX
 
 sample/                     # test fixtures
   src/main/java/…/          # Java @Mapper samples (SampleMapper, UserMapper)
@@ -90,13 +99,15 @@ Each driver must also export `bulkLoad(config, password, tableName, columns, row
 
 `mapperWebviewProvider.ts` implements `vscode.WebviewViewProvider` (view type `mybatisUtility.mapperView`, declared as `"type": "webview"` in `package.json`).
 
-- `resolveWebviewView()` sets the HTML and kicks off `_scan()`. Scan results are sent to the webview via `{ type: 'setMappers', items, hasFolders }`.
+- `resolveWebviewView()` sets the HTML but sends **no postMessage**. It waits for the `{ type: 'ready' }` message from the webview script (sent on DOMContentLoaded) before delivering data. This avoids lost messages when the script hasn't loaded yet.
+- **Scan caching**: `_scanned` flag and `_mappers` / `_hasFolders` cache. First `ready` triggers `_scan()`; subsequent `ready` (panel re-shown) sends cached results immediately — no rescan. `refresh()` resets `_scanned = false` before rescanning.
 - `_scan()` sends `{ type: 'setLoading', loading: true }` first, then processes URIs **folder-by-folder** (sorted by parent dir) and sends partial results after each folder so the panel populates progressively.
 - `hasFolders` distinguishes "scan folders not configured" from "configured but no mappers found" — the webview shows different empty-state messages for each.
 - `makeGlob()` strips trailing `/**` / `/*` then emits both `folder/ext` (direct children) and `folder/**/ext` (nested). Handles patterns like `**/mapper/**` and `**/mapper` identically.
 - `parseJavaMapper()` supports single-quoted strings and Java 15+ text blocks (`"""`). Falls back to `parseJavaMapperMethods()` when no inline SQL is found (XML-mapped or annotation-only interfaces with no SQL yet).
 - `parseJavaMapperMethods()` in `queryParser.ts` extracts method signatures from `@Mapper` interfaces; infers `QueryKind` from method-name prefix; extracts `@Param` values as placeholder names.
 - Excluded by default: `target/`, `build/`, `out/`, `dist/`, `.gradle/`, `src/test/`, `src/test-**/`.
+- **Initial display mode**: the HTML `<body data-display-mode="...">` attribute carries the persisted mode so the webview script reads the correct initial value without waiting for a postMessage.
 - `setDisplayMode('flat'|'tree')` sends `{ type: 'setDisplayMode', mode }` — called by the title-bar toggle commands in `extension.ts`.
 - The webview script (`media/src/mapperPanel.ts`) handles all filtering and rendering client-side (150 ms debounce). No round-trip to the extension for filter changes.
 - Clicking a query in the webview posts `{ type: 'openQuery', query, mapperFile }` → `MapperWebviewProvider` calls `QueryPanel.show()` directly.
@@ -109,11 +120,11 @@ Query/Config panels (`src/types.ts`):
 
 Mapper panel (ad-hoc, not in types.ts):
 - Extension → webview: `{ type: 'setLoading', loading: boolean }`, `{ type: 'setMappers', items: MapperFile[], hasFolders: boolean }`, `{ type: 'setDisplayMode', mode }`
-- Webview → extension: `{ type: 'openQuery', query, mapperFile }`, `{ type: 'openSettings' }`
+- Webview → extension: **`{ type: 'ready' }`** (on DOMContentLoaded — triggers initial data delivery), `{ type: 'openQuery', query, mapperFile }`, `{ type: 'openSettings' }`
 
 Dataset panel (`DatasetToWebMsg` / `WebToDatasetMsg` in `types.ts`):
 - Extension → webview: `{ type: 'setLoading', loading: boolean }`, `{ type: 'setFiles', items: DatasetFile[] }`, `{ type: 'setDisplayMode', mode }`
-- Webview → extension: `{ type: 'openLoader', file }`, `{ type: 'refresh' }`
+- Webview → extension: **`{ type: 'ready' }`** (on DOMContentLoaded), `{ type: 'openLoader', file }`, `{ type: 'refresh' }`
 
 Dataset loader panel (`LoaderExtToWebMsg` / `LoaderWebToExtMsg` in `types.ts`):
 - Extension → webview: `init`, `preview { sheet, columns, rows }`, `loadResult { success, message }`

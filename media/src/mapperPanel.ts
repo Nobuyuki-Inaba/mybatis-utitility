@@ -15,6 +15,7 @@ type ExtToWebMsg =
   | { type: 'setLoading'; loading: boolean };
 
 type WebToExtMsg =
+  | { type: 'ready' }
   | { type: 'openQuery'; query: ParsedQuery; mapperFile: MapperFile }
   | { type: 'openSettings' };
 
@@ -27,7 +28,8 @@ const vscode = acquireVsCodeApi();
 let allMappers: MapperFile[] = [];
 let hasFolders = false;
 let loading = true;
-let displayMode: 'flat' | 'tree' = 'flat';
+let displayMode: 'flat' | 'tree' =
+  (document.body.dataset.displayMode as 'flat' | 'tree') ?? 'flat';
 const expanded = new Set<string>(); // expanded file paths
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -217,4 +219,6 @@ window.addEventListener('DOMContentLoaded', () => {
   input.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Escape') { input.value = ''; render(); }
   });
+  render(); // show loading state immediately
+  vscode.postMessage({ type: 'ready' }); // notify extension that script is ready
 });

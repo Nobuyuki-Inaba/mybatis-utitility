@@ -40,6 +40,8 @@ export class MapperWebviewProvider implements vscode.WebviewViewProvider {
 
   private _view?: vscode.WebviewView;
   private _mappers: MapperFile[] = [];
+  private _hasFolders = false;
+  private _scanned = false;
   private _scanning = false;
   private _displayMode: 'flat' | 'tree' = 'flat';
 
@@ -63,20 +65,25 @@ export class MapperWebviewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.html = this._buildHtml(webviewView.webview);
 
     webviewView.webview.onDidReceiveMessage((msg: { type: string; query?: unknown; mapperFile?: unknown }) => {
-      if (msg.type === 'openQuery') {
+      if (msg.type === 'ready') {
+        // Webview script is loaded — send initial data
+        this._sendDisplayMode();
+        if (this._scanned) {
+          this._sendMappers(this._hasFolders);
+        } else {
+          void this._scan();
+        }
+      } else if (msg.type === 'openQuery') {
         const { query, mapperFile } = msg as { type: 'openQuery'; query: import('./types').ParsedQuery; mapperFile: MapperFile };
         QueryPanel.show(this._extensionUri, this._configMgr, query, mapperFile);
       } else if (msg.type === 'openSettings') {
         void vscode.commands.executeCommand('workbench.action.openSettings', 'mybatisUtility');
       }
     });
-
-    // Trigger scan (sends mappers to webview when done); send display mode immediately
-    this._sendDisplayMode();
-    void this._scan();
   }
 
   refresh(): void {
+    this._scanned = false;
     void this._scan();
   }
 
@@ -149,6 +156,8 @@ export class MapperWebviewProvider implements vscode.WebviewViewProvider {
       }
     } finally {
       this._scanning = false;
+      this._hasFolders = hasFolders;
+      this._scanned = true;
       this._sendMappers(hasFolders);
     }
   }
@@ -280,7 +289,7 @@ export class MapperWebviewProvider implements vscode.WebviewViewProvider {
     }
   </style>
 </head>
-<body>
+<body data-display-mode="${this._displayMode}">
   <div id="filter-wrap">
     <input id="filter-input" type="text" placeholder="Filter mappers and queries…" />
   </div>

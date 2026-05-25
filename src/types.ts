@@ -157,6 +157,7 @@ export type DatasetToWebMsg =
 
 // Dataset sidebar webview → Extension
 export type WebToDatasetMsg =
+  | { type: 'ready' }
   | { type: 'openLoader'; file: DatasetFile }
   | { type: 'refresh' };
 

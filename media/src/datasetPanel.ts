@@ -14,7 +14,8 @@ const vscode = acquireVsCodeApi();
 
 let files: DatasetFile[] = [];
 let loading = true;
-let displayMode: 'flat' | 'tree' = 'flat';
+let displayMode: 'flat' | 'tree' =
+  (document.body.dataset.displayMode as 'flat' | 'tree') ?? 'flat';
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
 // ---------------------------------------------------------------------------
@@ -152,5 +153,6 @@ window.addEventListener('DOMContentLoaded', () => {
   input.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Escape') { input.value = ''; render(); }
   });
-  render();
+  render(); // show loading state immediately
+  vscode.postMessage({ type: 'ready' }); // notify extension that script is ready
 });
