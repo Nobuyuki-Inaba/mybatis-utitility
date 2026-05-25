@@ -6,7 +6,7 @@ VSCode extension for MyBatis developers. Browse Mapper files, fill query paramet
 
 ## Features
 
-- **Mapper panel** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type. Includes a real-time filter input and flat / hierarchical view toggle. Results stream in folder-by-folder so the panel populates progressively on large projects
+- **Mapper panel** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type. Supports inline SQL annotations (including Java 15+ **text blocks** `"""..."""`) and XML-mapped interfaces. Results stream in folder-by-folder so the panel populates progressively on large projects
 - **Query panel** — Click a query to open it, edit SQL inline, fill typed parameters (`#{param}`), and execute
 - **Live SQL preview** — Click **Preview SQL** to see the final SQL with all parameters substituted inline, before executing
 - **Explain plan** — Click **Explain** to run `EXPLAIN` on the current SQL and inspect the query plan
@@ -111,15 +111,35 @@ Open settings with the **gear icon** (⚙) in the Mappers panel title bar.
 
 ## Supported Mapper Formats
 
-### Java — annotation-based
+### Java — annotation-based (single-line or text block)
 
 ```java
 @Mapper
 public interface UserMapper {
     @Select("SELECT * FROM users WHERE id = #{id}")
     User findById(String id);
+
+    // Java 15+ text blocks are also supported
+    @Select("""
+        SELECT * FROM users
+        WHERE name = #{name}
+        """)
+    List<User> findByName(String name);
 }
 ```
+
+### Java — XML-mapped interface (`@Mapper` only, no inline SQL)
+
+```java
+@Mapper
+public interface UserMapper {
+    List<User> findAll();
+    User findById(Long id);
+    int insert(User user);
+}
+```
+
+Method names are listed in the panel with query kind inferred from the name prefix (`find*` / `get*` → SELECT, `insert*` / `save*` → INSERT, etc.). SQL can be filled in manually in the query panel.
 
 ### XML — MyBatis mapper XML
 

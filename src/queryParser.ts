@@ -68,8 +68,9 @@ function formatValue(entry: ParamEntry): string {
 // Java mapper parser
 // ---------------------------------------------------------------------------
 
+// match[1]=kind  match[2]=text-block  match[3]=double-quoted  match[4]=backtick
 const JAVA_ANNOTATION_RE =
-  /@(Select|Insert|Update|Delete)\s*\(\s*(?:"((?:[^"\\]|\\.)*)"|`((?:[^`\\]|\\.)*)`)\s*\)/gs;
+  /@(Select|Insert|Update|Delete)\s*\(\s*(?:"""([\s\S]*?)"""|"((?:[^"\\]|\\.)*)"|`((?:[^`\\]|\\.)*)`)\s*\)/gs;
 
 const JAVA_METHOD_RE = /(?:void|[\w<>[\],\s]+)\s+(\w+)\s*\(/g;
 
@@ -82,7 +83,9 @@ export function parseJavaMapper(content: string): ParsedQuery[] {
 
   while ((match = JAVA_ANNOTATION_RE.exec(content)) !== null) {
     const kind = match[1].toLowerCase() as QueryKind;
-    const sql = (match[2] ?? match[3]).replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\\\/g, '\\').trim();
+    // match[2] = text block content (Java 15+), match[3] = quoted string, match[4] = backtick
+    const raw = match[2] ?? match[3] ?? match[4];
+    const sql = raw.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\\\/g, '\\').trim();
 
     // Find the method name that follows the annotation
     const afterAnnotation = content.slice(match.index + match[0].length);
@@ -94,6 +97,80 @@ export function parseJavaMapper(content: string): ParsedQuery[] {
   }
 
   return results;
+}
+
+// ---------------------------------------------------------------------------
+// Java mapper method parser (XML-mapped projects — no inline SQL)
+// ---------------------------------------------------------------------------
+
+/**
+ * For @Mapper interfaces where SQL lives in XML files (no @Select/@Insert etc.).
+ * Extracts method names, infers QueryKind from naming conventions, and collects
+ * @Param values (or parameter names) as placeholder hints.
+ * sql is left empty — the user fills it in the query panel.
+ */
+export function parseJavaMapperMethods(content: string): ParsedQuery[] {
+  const results: ParsedQuery[] = [];
+  const seen = new Set<string>();
+
+  // Strip block comments so we don't match method-like text inside them
+  const stripped = content.replace(/\/\*[\s\S]*?\*\//g, ' ');
+
+  for (const rawLine of stripped.split('\n')) {
+    // Remove trailing line comment and trim
+    const line = rawLine.replace(/\/\/.*$/, '').trim();
+
+    // Abstract interface methods end with ; and have ( )
+    if (!line.endsWith(';') || !line.includes('(') || !line.includes(')')) continue;
+    // Skip annotations, comments, imports, type declarations
+    if (/^[@*/]|^(import|package|public\s+(interface|class|abstract|enum))\b/.test(line)) continue;
+
+    // Strip inline annotations (@Param("x"), @Options, etc.) to expose the bare signature
+    const lineNoAnnot = line.replace(/@\w+\s*\([^)]*\)\s*/g, '');
+
+    // Method name = last identifier before the first '('
+    const firstParen = lineNoAnnot.indexOf('(');
+    if (firstParen < 0) continue;
+    const nameParts = lineNoAnnot.slice(0, firstParen).trim().split(/[\s<>[\],]+/).filter(Boolean);
+    const id = nameParts[nameParts.length - 1];
+
+    if (!id || !/^\w+$/.test(id)) continue;
+    if (/^(if|else|for|while|switch|catch|try|new|return|throw|extends|implements|class|interface|enum|super|this|public|private|protected|static|final|abstract|default|void)$/.test(id)) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+
+    // Extract params from original line (between first '(' and last ')')
+    const paramsStr = line.slice(line.indexOf('(') + 1, line.lastIndexOf(')'));
+
+    results.push({ id, kind: _inferKind(id), sql: '', params: _extractParamNames(paramsStr) });
+  }
+
+  return results;
+}
+
+function _inferKind(name: string): QueryKind {
+  const lc = name.toLowerCase();
+  if (/^(select|find|get|list|fetch|query|search|count|exists|load|read|retrieve|look)/.test(lc)) { return 'select'; }
+  if (/^(insert|save|create|add|register|persist|store)/.test(lc)) { return 'insert'; }
+  if (/^(update|modify|change|edit|merge|upsert|patch)/.test(lc)) { return 'update'; }
+  if (/^(delete|remove|drop|purge|clear|erase)/.test(lc)) { return 'delete'; }
+  return 'unknown';
+}
+
+function _extractParamNames(paramsStr: string): string[] {
+  // Prefer @Param("name") — these are the actual SQL placeholder names
+  const annotNames: string[] = [];
+  const re = /@Param\s*\(\s*"([^"]+)"\s*\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(paramsStr)) !== null) { annotNames.push(m[1]); }
+  if (annotNames.length > 0) { return annotNames; }
+
+  // Fallback: last word (variable name) of each comma-separated parameter
+  const noAnnot = paramsStr.replace(/@\w+\s*\([^)]*\)\s*/g, '');
+  return noAnnot
+    .split(',')
+    .map(p => p.trim().split(/\s+/).filter(Boolean).pop() ?? '')
+    .filter(name => name && /^[a-z]/.test(name));
 }
 
 // ---------------------------------------------------------------------------

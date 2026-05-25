@@ -10,7 +10,7 @@
 
 import * as path from 'path';
 import { MapperFile } from './types';
-import { parseJavaMapper, parseXmlMapper } from './queryParser';
+import { parseJavaMapper, parseXmlMapper, parseJavaMapperMethods } from './queryParser';
 
 // ---------------------------------------------------------------------------
 // Detection  (is this file a MyBatis mapper?)
@@ -42,7 +42,9 @@ export function parseFile(filePath: string, content: string): MapperFile | null 
 
   if (ext === '.java') {
     if (!isJavaMapper(content)) { return null; }
-    const queries = parseJavaMapper(content);
+    // First try inline SQL (@Select/@Insert etc.); fall back to method signatures for XML-mapped mappers
+    let queries = parseJavaMapper(content);
+    if (queries.length === 0) { queries = parseJavaMapperMethods(content); }
     if (queries.length === 0) { return null; }
     const label = extractJavaClassName(content) ?? path.basename(filePath, '.java');
     return { source: 'java', filePath, label, queries };
