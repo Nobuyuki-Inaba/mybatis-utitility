@@ -6,8 +6,8 @@ VSCode extension for MyBatis developers. Browse Mapper files, fill query paramet
 
 ## Features
 
-- **Mapper panel** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type. Supports inline SQL annotations (including Java 15+ **text blocks** `"""..."""`) and XML-mapped interfaces. Results stream in folder-by-folder so the panel populates progressively on large projects
-- **Query panel** — Click a query to open it, edit SQL inline, fill typed parameters (`#{param}`), and execute
+- **Mapper panel** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type. Supports inline SQL annotations (including Java 15+ **text blocks** `"""..."""`) and XML-mapped interfaces. Results stream in folder-by-folder so the panel populates progressively on large projects. Scan results are cached — switching to another panel and back reuses the result instantly without rescanning
+- **Query panel** — Click a query to open it, edit SQL inline with **syntax highlighting**, fill typed parameters (`#{param}`), and execute
 - **Live SQL preview** — Click **Preview SQL** to see the final SQL with all parameters substituted inline, before executing
 - **Explain plan** — Click **Explain** to run `EXPLAIN` on the current SQL and inspect the query plan
 - **Dataset loader** — **Dataset** panel scans for CSV / XLSX fixture files in your workspace. Filter files in real time with the search input, switch between flat and hierarchical views, click any file to open the loader, preview data, map sheets to database tables, and bulk-load with one click (clears and reloads the target table)

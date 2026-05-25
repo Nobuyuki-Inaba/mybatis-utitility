@@ -2,7 +2,7 @@
   "name": "mybatis-utility",
   "displayName": "MyBatis Utility",
   "description": "MyBatis query executor — browse Mapper files, fill placeholders, run queries against configured databases",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "publisher": "nobuyuki-inaba",
   "license": "MIT",
   "repository": {
@@ -211,9 +211,11 @@
     "build": "npm run compile",
     "compile": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.webview.json --noEmit && npm run build:ext && npm run build:webview",
     "watch": "npm run build:ext -- --watch & npm run build:webview -- --watch",
-    "package": "npm run compile && vsce package"
+    "package": "npm run compile && vsce package",
+    "test": "jest"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.11.0",
     "@types/pg": "^8.11.0",
@@ -221,8 +223,11 @@
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^2.24.0",
     "esbuild": "^0.28.0",
+    "highlight.js": "^11.11.1",
+    "jest": "^30.4.2",
     "mysql2": "^3.9.0",
     "pg": "^8.11.0",
+    "ts-jest": "^29.4.11",
     "typescript": "^6.0.3"
   },
   "dependencies": {

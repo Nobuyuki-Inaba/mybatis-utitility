@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { DatasetToWebMsg, WebToDatasetMsg } from './types';
+import { DatasetFile, DatasetToWebMsg, WebToDatasetMsg } from './types';
 import { scanDatasetFiles } from './datasetScanner';
 import { DatasetLoaderPanel } from './datasetLoaderPanel';
 import { ConfigManager } from './configManager';
@@ -13,6 +13,8 @@ export class DatasetWebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'mybatisUtility.datasetView';
 
   private _view?: vscode.WebviewView;
+  private _files: DatasetFile[] = [];
+  private _scanned = false;
   private _scanning = false;
   private _displayMode: 'flat' | 'tree' = 'flat';
 
@@ -36,18 +38,26 @@ export class DatasetWebviewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.html = this._buildHtml(webviewView.webview);
 
     webviewView.webview.onDidReceiveMessage((msg: WebToDatasetMsg) => {
-      if (msg.type === 'openLoader') {
+      if (msg.type === 'ready') {
+        // Webview script is loaded — send initial data
+        this._sendDisplayMode();
+        if (this._scanned) {
+          const cached: DatasetToWebMsg = { type: 'setFiles', items: this._files };
+          void this._view?.webview.postMessage(cached);
+        } else {
+          void this._scan();
+        }
+      } else if (msg.type === 'openLoader') {
         DatasetLoaderPanel.show(this._extensionUri, this._configMgr, msg.file);
       } else if (msg.type === 'refresh') {
+        this._scanned = false;
         void this._scan();
       }
     });
-
-    this._sendDisplayMode();
-    void this._scan();
   }
 
   refresh(): void {
+    this._scanned = false;
     void this._scan();
   }
 
@@ -76,11 +86,12 @@ export class DatasetWebviewProvider implements vscode.WebviewViewProvider {
         '**/datasets/**',
         '**/src/test/resources/**',
       ]);
-      const files = await scanDatasetFiles(datasetDirectories);
-      const msg: DatasetToWebMsg = { type: 'setFiles', items: files };
+      this._files = await scanDatasetFiles(datasetDirectories);
+      const msg: DatasetToWebMsg = { type: 'setFiles', items: this._files };
       void this._view?.webview.postMessage(msg);
     } finally {
       this._scanning = false;
+      this._scanned = true;
     }
   }
 
@@ -177,7 +188,7 @@ export class DatasetWebviewProvider implements vscode.WebviewViewProvider {
     }
   </style>
 </head>
-<body>
+<body data-display-mode="${this._displayMode}">
   <div id="filter-wrap">
     <input id="filter-input" type="text" placeholder="Filter dataset files…" />
   </div>

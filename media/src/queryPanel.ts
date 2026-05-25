@@ -4,6 +4,9 @@
  */
 
 import type { ExtToWebMsg, WebToExtMsg, ParsedQuery, ParamEntry, ParamType, ParamPreset, DbConnectionConfig, QueryResult } from '../../src/types';
+import hljs from 'highlight.js/lib/core';
+import sql from 'highlight.js/lib/languages/sql';
+hljs.registerLanguage('sql', sql);
 
 declare function acquireVsCodeApi(): {
   postMessage(msg: WebToExtMsg): void;
@@ -126,7 +129,7 @@ function renderParamTable(): void {
 }
 
 function renderQuery(query: ParsedQuery): void {
-  el('query-display').textContent = query.sql;
+  el('query-display').innerHTML = hljs.highlight(query.sql, { language: 'sql' }).value;
   el('mapper-label').textContent = query.id;
 }
 
@@ -377,7 +380,7 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   el('btn-reset').addEventListener('click', () => {
-    if (currentQuery) { el('query-display').textContent = currentQuery.sql; }
+    if (currentQuery) { renderQuery(currentQuery); }
     renderParamTable();
   });
 
@@ -528,6 +531,30 @@ function buildLayout(): string {
     color: #98c379; white-space: pre-wrap; word-break: break-all;
     padding: 8px 10px; user-select: text;
   }
+
+  /* highlight.js SQL theme (dark default, light override) */
+  :root {
+    --hljs-kw: #569cd6;
+    --hljs-str: #ce9178;
+    --hljs-num: #b5cea8;
+    --hljs-cmt: #6a9955;
+    --hljs-op: #d4d4d4;
+    --hljs-var: #9cdcfe;
+  }
+  body.vscode-light {
+    --hljs-kw: #0000ff;
+    --hljs-str: #a31515;
+    --hljs-num: #098658;
+    --hljs-cmt: #008000;
+    --hljs-op: #000000;
+    --hljs-var: #001080;
+  }
+  .hljs-keyword, .hljs-type { color: var(--hljs-kw); font-weight: bold; }
+  .hljs-string, .hljs-literal { color: var(--hljs-str); }
+  .hljs-number { color: var(--hljs-num); }
+  .hljs-comment { color: var(--hljs-cmt); font-style: italic; }
+  .hljs-operator, .hljs-punctuation { color: var(--hljs-op); }
+  .hljs-variable, .hljs-name { color: var(--hljs-var); }
 </style>
 
 <div class="toolbar">

@@ -7,6 +7,9 @@
 CLAUDE.md
 .github/**
 sample/**
+test/**
+jest.config.js
+tsconfig*.json
 
 # TypeScript source and configs
 src/**
