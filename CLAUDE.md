@@ -39,6 +39,7 @@ src/
   datasetLoaderPanel.ts     # WebviewPanel for bulk-loading a fixture file into a table (singleton)
   datasetLoader.ts          # readSheetData() via ExcelJS; loadSheetToDb() via dbManager.bulkLoad()
   datasetScanner.ts         # scanDatasetFiles() — finds CSV/XLSX under configured directories; all findFiles calls run in parallel; xlsx sheet names are NOT read here (deferred to DatasetLoaderPanel)
+  queryParser.ts            # JAVA_ANNOTATION_RE supports single-quoted strings AND Java 15+ text blocks ("""); parseJavaMapperMethods() handles @Mapper interfaces with no inline SQL
   drivers/
     sqlite.ts               # sql.js (pure WASM, no native build required); implements bulkLoad
     postgresql.ts           # pg (pure JS); implements bulkLoad
@@ -92,7 +93,9 @@ Each driver must also export `bulkLoad(config, password, tableName, columns, row
 - `resolveWebviewView()` sets the HTML and kicks off `_scan()`. Scan results are sent to the webview via `{ type: 'setMappers', items, hasFolders }`.
 - `_scan()` sends `{ type: 'setLoading', loading: true }` first, then processes URIs **folder-by-folder** (sorted by parent dir) and sends partial results after each folder so the panel populates progressively.
 - `hasFolders` distinguishes "scan folders not configured" from "configured but no mappers found" — the webview shows different empty-state messages for each.
-- `makeGlob()` emits both `folder/ext` (direct children) and `folder/**/ext` (nested) to cover glob engines that don't match `**` with zero segments.
+- `makeGlob()` strips trailing `/**` / `/*` then emits both `folder/ext` (direct children) and `folder/**/ext` (nested). Handles patterns like `**/mapper/**` and `**/mapper` identically.
+- `parseJavaMapper()` supports single-quoted strings and Java 15+ text blocks (`"""`). Falls back to `parseJavaMapperMethods()` when no inline SQL is found (XML-mapped or annotation-only interfaces with no SQL yet).
+- `parseJavaMapperMethods()` in `queryParser.ts` extracts method signatures from `@Mapper` interfaces; infers `QueryKind` from method-name prefix; extracts `@Param` values as placeholder names.
 - Excluded by default: `target/`, `build/`, `out/`, `dist/`, `.gradle/`, `src/test/`, `src/test-**/`.
 - `setDisplayMode('flat'|'tree')` sends `{ type: 'setDisplayMode', mode }` — called by the title-bar toggle commands in `extension.ts`.
 - The webview script (`media/src/mapperPanel.ts`) handles all filtering and rendering client-side (150 ms debounce). No round-trip to the extension for filter changes.

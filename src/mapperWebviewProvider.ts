@@ -15,8 +15,12 @@ const EXCLUDE = '{**/node_modules/**,**/target/**,**/build/**,**/out/**,**/dist/
 function makeGlob(folders: string[], ext: string): string {
   const patterns: string[] = [];
   for (const f of folders) {
-    const p = f.replace(/\\/g, '/').replace(/\/+$/, '');
+    // Normalize: strip trailing slashes AND trailing /** or /* so both cases
+    // get both patterns (direct children + nested).
+    // e.g. "**/mapper/**" → "**/mapper", "src/main/java" → "src/main/java"
+    const p = f.replace(/\\/g, '/').replace(/\/+$/, '').replace(/\/\*+$/, '');
     if (p.endsWith('*')) {
+      // Still a wildcard after stripping — e.g. "**/mapper*" → keep as-is
       patterns.push(`${p}/${ext}`);
     } else {
       patterns.push(`${p}/${ext}`);

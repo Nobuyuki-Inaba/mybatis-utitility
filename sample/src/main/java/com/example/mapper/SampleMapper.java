@@ -10,8 +10,11 @@ import org.apache.ibatis.annotations.Delete;
 @Mapper
 public interface SampleMapper {
 
-    @Select("select * from sample where update_date = #{businessDate} and id = #{id}")
-    Sample selectById(@Param("businessDate") String businessDate, @Param("id") String id);
+    @Select("""
+        select * from sample where update_date = #{businessDate} and id = #{id}
+        """)
+    @Options(fetchSize=1000)
+    Cursor<test> selectById(@Param("businessDate") String businessDate, @Param("id") String id);
 
     @Select("select * from sample where update_date = #{businessDate} and name like #{name}")
     java.util.List<Sample> selectByName(@Param("businessDate") String businessDate, @Param("name") String name);
