@@ -13,6 +13,7 @@ const vscode = acquireVsCodeApi();
 // ---------------------------------------------------------------------------
 
 let files: DatasetFile[] = [];
+let loading = true;
 let displayMode: 'flat' | 'tree' = 'flat';
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -86,6 +87,11 @@ function render(): void {
   const visible = filteredFiles();
   const f = filterText();
 
+  if (loading) {
+    list.innerHTML = `<div class="empty">Scanning…</div>`;
+    return;
+  }
+
   if (files.length === 0) {
     list.innerHTML = `<div class="empty">No dataset files found.<br>
       Add CSV or Excel files under fixture, testdata, or dataset directories.</div>`;
@@ -120,7 +126,11 @@ function render(): void {
 
 window.addEventListener('message', (event: MessageEvent<DatasetToWebMsg>) => {
   const msg = event.data;
-  if (msg.type === 'setFiles') {
+  if (msg.type === 'setLoading') {
+    loading = msg.loading;
+    render();
+  } else if (msg.type === 'setFiles') {
+    loading = false;
     files = msg.items;
     render();
   } else if (msg.type === 'setDisplayMode') {
