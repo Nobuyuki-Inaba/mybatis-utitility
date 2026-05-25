@@ -6,7 +6,7 @@ VSCode extension for MyBatis developers. Browse Mapper files, fill query paramet
 
 ## Features
 
-- **Mapper panel** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type. Includes a real-time filter input and flat / hierarchical view toggle
+- **Mapper panel** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type. Includes a real-time filter input and flat / hierarchical view toggle. Results stream in folder-by-folder so the panel populates progressively on large projects
 - **Query panel** — Click a query to open it, edit SQL inline, fill typed parameters (`#{param}`), and execute
 - **Live SQL preview** — Click **Preview SQL** to see the final SQL with all parameters substituted inline, before executing
 - **Explain plan** — Click **Explain** to run `EXPLAIN` on the current SQL and inspect the query plan
@@ -38,9 +38,11 @@ Set **Scan Folders** to the directories that contain your Mapper files:
 ]
 ```
 
-Default: `["**/mapper", "**/repository"]` — works for most Spring Boot projects out of the box.
+Default: `["**/mapper", "**/repository"]` — works for most Spring Boot / Maven projects out of the box.
 
-The **Mappers** panel in the sidebar will populate automatically. Use the filter input at the top to narrow results in real time, and use the list/tree icon in the title bar to switch between flat and hierarchical views.
+> **Maven multi-module projects**: open the root project folder in VSCode. The default `**/mapper` pattern finds mapper directories in every module automatically.
+
+The **Mappers** panel in the sidebar will populate automatically. A **Scanning…** indicator is shown while the workspace is being searched. Results appear folder-by-folder as they are found. Use the filter input at the top to narrow results in real time, and use the list/tree icon in the title bar to switch between flat and hierarchical views.
 
 ### 2. Add a database connection
 
@@ -100,10 +102,10 @@ The **Dataset** panel (in the sidebar) automatically scans for CSV and XLSX fixt
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `mybatisUtility.scanFolders` | `["**/mapper", "**/repository"]` | Glob patterns for mapper file search. Empty = no scan. |
+| `mybatisUtility.scanFolders` | `["**/mapper", "**/repository"]` | Glob patterns for mapper file search. Empty = no scan. `target/`, `build/`, `.gradle/`, `src/test/` are always excluded. |
 | `mybatisUtility.fetchLimit` | `5000` | Max rows fetched per query. Reduce to save memory. |
 | `mybatisUtility.pageSize` | `200` | Rows displayed per page in the result panel. |
-| `mybatisUtility.datasetDirectories` | `["**/fixture/**", "**/fixtures/**", ...]` | Glob patterns for fixture files shown in the Dataset panel. |
+| `mybatisUtility.datasetDirectories` | `["**/fixture/**", "**/fixtures/**", ...]` | Glob patterns for fixture files shown in the Dataset panel. `target/`, `build/`, `.gradle/`, `node_modules/` are always excluded. |
 
 Open settings with the **gear icon** (⚙) in the Mappers panel title bar.
 

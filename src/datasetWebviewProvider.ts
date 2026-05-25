@@ -64,6 +64,7 @@ export class DatasetWebviewProvider implements vscode.WebviewViewProvider {
   private async _scan(): Promise<void> {
     if (this._scanning) { return; }
     this._scanning = true;
+    void this._view?.webview.postMessage({ type: 'setLoading', loading: true } satisfies DatasetToWebMsg);
     try {
       const config = vscode.workspace.getConfiguration('mybatisUtility');
       const datasetDirectories: string[] = config.get<string[]>('datasetDirectories', [

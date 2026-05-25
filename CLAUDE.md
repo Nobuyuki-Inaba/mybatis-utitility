@@ -38,7 +38,7 @@ src/
   datasetWebviewProvider.ts # WebviewViewProvider — Dataset panel (filter input, flat/tree toggle, scans CSV/XLSX fixture files)
   datasetLoaderPanel.ts     # WebviewPanel for bulk-loading a fixture file into a table (singleton)
   datasetLoader.ts          # readSheetData() via ExcelJS; loadSheetToDb() via dbManager.bulkLoad()
-  datasetScanner.ts         # scanDatasetFiles() — finds CSV/XLSX under configured directories
+  datasetScanner.ts         # scanDatasetFiles() — finds CSV/XLSX under configured directories; all findFiles calls run in parallel; xlsx sheet names are NOT read here (deferred to DatasetLoaderPanel)
   drivers/
     sqlite.ts               # sql.js (pure WASM, no native build required); implements bulkLoad
     postgresql.ts           # pg (pure JS); implements bulkLoad
@@ -89,7 +89,11 @@ Each driver must also export `bulkLoad(config, password, tableName, columns, row
 
 `mapperWebviewProvider.ts` implements `vscode.WebviewViewProvider` (view type `mybatisUtility.mapperView`, declared as `"type": "webview"` in `package.json`).
 
-- `resolveWebviewView()` sets the HTML and kicks off `_scan()`. Scan results are sent to the webview via `{ type: 'setMappers', items }`.
+- `resolveWebviewView()` sets the HTML and kicks off `_scan()`. Scan results are sent to the webview via `{ type: 'setMappers', items, hasFolders }`.
+- `_scan()` sends `{ type: 'setLoading', loading: true }` first, then processes URIs **folder-by-folder** (sorted by parent dir) and sends partial results after each folder so the panel populates progressively.
+- `hasFolders` distinguishes "scan folders not configured" from "configured but no mappers found" — the webview shows different empty-state messages for each.
+- `makeGlob()` emits both `folder/ext` (direct children) and `folder/**/ext` (nested) to cover glob engines that don't match `**` with zero segments.
+- Excluded by default: `target/`, `build/`, `out/`, `dist/`, `.gradle/`, `src/test/`, `src/test-**/`.
 - `setDisplayMode('flat'|'tree')` sends `{ type: 'setDisplayMode', mode }` — called by the title-bar toggle commands in `extension.ts`.
 - The webview script (`media/src/mapperPanel.ts`) handles all filtering and rendering client-side (150 ms debounce). No round-trip to the extension for filter changes.
 - Clicking a query in the webview posts `{ type: 'openQuery', query, mapperFile }` → `MapperWebviewProvider` calls `QueryPanel.show()` directly.
@@ -101,11 +105,11 @@ Query/Config panels (`src/types.ts`):
 - `WebToExtMsg` — extension ← webview (execute `{mode:'all'|'range'|'explain'}`, getConnections, saveConnection, deleteConnection)
 
 Mapper panel (ad-hoc, not in types.ts):
-- Extension → webview: `{ type: 'setMappers', items: MapperFile[] }`, `{ type: 'setDisplayMode', mode }`
+- Extension → webview: `{ type: 'setLoading', loading: boolean }`, `{ type: 'setMappers', items: MapperFile[], hasFolders: boolean }`, `{ type: 'setDisplayMode', mode }`
 - Webview → extension: `{ type: 'openQuery', query, mapperFile }`, `{ type: 'openSettings' }`
 
 Dataset panel (`DatasetToWebMsg` / `WebToDatasetMsg` in `types.ts`):
-- Extension → webview: `{ type: 'setFiles', items: DatasetFile[] }`, `{ type: 'setDisplayMode', mode }`
+- Extension → webview: `{ type: 'setLoading', loading: boolean }`, `{ type: 'setFiles', items: DatasetFile[] }`, `{ type: 'setDisplayMode', mode }`
 - Webview → extension: `{ type: 'openLoader', file }`, `{ type: 'refresh' }`
 
 Dataset loader panel (`LoaderExtToWebMsg` / `LoaderWebToExtMsg` in `types.ts`):

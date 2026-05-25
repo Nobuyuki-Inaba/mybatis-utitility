@@ -1,16 +1,28 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { MapperFile } from './types';
 import { parseFile } from './mapperScanner';
 import { QueryPanel } from './queryPanel';
 import { ConfigManager } from './configManager';
 
-const EXCLUDE = '{**/node_modules/**,**/target/**,**/build/**,**/out/**,**/dist/**,.git/**}';
+const EXCLUDE = '{**/node_modules/**,**/target/**,**/build/**,**/out/**,**/dist/**,.git/**,**/.gradle/**,**/src/test/**,**/src/test-**/**}';
 
+/**
+ * Build a glob pattern for each folder, covering both direct children and nested files.
+ * Using only "folder/**\/ext" risks missing files directly in the folder on some glob engines,
+ * so we emit both "folder/ext" and "folder\/**\/ext" and wrap in braces when there are multiple.
+ */
 function makeGlob(folders: string[], ext: string): string {
-  const patterns = folders.map(f => {
+  const patterns: string[] = [];
+  for (const f of folders) {
     const p = f.replace(/\\/g, '/').replace(/\/+$/, '');
-    return p.endsWith('*') ? `${p}/${ext}` : `${p}/**/${ext}`;
-  });
+    if (p.endsWith('*')) {
+      patterns.push(`${p}/${ext}`);
+    } else {
+      patterns.push(`${p}/${ext}`);
+      patterns.push(`${p}/**/${ext}`);
+    }
+  }
   return patterns.length === 1 ? patterns[0] : `{${patterns.join(',')}}`;
 }
 
@@ -69,9 +81,9 @@ export class MapperWebviewProvider implements vscode.WebviewViewProvider {
     this._sendDisplayMode();
   }
 
-  private _sendMappers(): void {
+  private _sendMappers(hasFolders: boolean): void {
     if (!this._view) { return; }
-    void this._view.webview.postMessage({ type: 'setMappers', items: this._mappers });
+    void this._view.webview.postMessage({ type: 'setMappers', items: this._mappers, hasFolders });
   }
 
   private _sendDisplayMode(): void {
@@ -82,13 +94,15 @@ export class MapperWebviewProvider implements vscode.WebviewViewProvider {
   private async _scan(): Promise<void> {
     if (this._scanning) { return; }
     this._scanning = true;
+    void this._view?.webview.postMessage({ type: 'setLoading', loading: true });
+    let hasFolders = false;
     try {
       const config = vscode.workspace.getConfiguration('mybatisUtility');
       const scanFolders: string[] = config.get<string[]>('scanFolders', []);
+      hasFolders = scanFolders.length > 0;
 
-      if (scanFolders.length === 0) {
+      if (!hasFolders) {
         this._mappers = [];
-        this._sendMappers();
         return;
       }
 
@@ -100,25 +114,38 @@ export class MapperWebviewProvider implements vscode.WebviewViewProvider {
         vscode.workspace.findFiles(xmlGlob,  EXCLUDE),
       ]);
 
-      const results: MapperFile[] = [];
-      await Promise.all([...javaUris, ...xmlUris].map(async (uri) => {
-        try {
-          const bytes = await vscode.workspace.fs.readFile(uri);
-          const content = Buffer.from(bytes).toString('utf8');
-          const mf = parseFile(uri.fsPath, content);
-          if (mf) { results.push(mf); }
-        } catch {
-          // ignore unreadable files
-        }
-      }));
+      // Group URIs by parent directory so results can be streamed folder by folder
+      const byDir = new Map<string, vscode.Uri[]>();
+      for (const uri of [...javaUris, ...xmlUris]) {
+        const dir = path.dirname(uri.fsPath);
+        if (!byDir.has(dir)) { byDir.set(dir, []); }
+        byDir.get(dir)!.push(uri);
+      }
 
-      results.sort((a, b) =>
-        a.source.localeCompare(b.source) || a.label.localeCompare(b.label)
-      );
-      this._mappers = results;
+      this._mappers = [];
+      const results: MapperFile[] = [];
+      for (const [, uris] of [...byDir.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+        await Promise.all(uris.map(async (uri) => {
+          try {
+            const bytes = await vscode.workspace.fs.readFile(uri);
+            const content = Buffer.from(bytes).toString('utf8');
+            const mf = parseFile(uri.fsPath, content);
+            if (mf) { results.push(mf); }
+          } catch {
+            // ignore unreadable files
+          }
+        }));
+
+        // Send partial results after each folder so the panel updates progressively
+        const sorted = [...results].sort((a, b) =>
+          a.source.localeCompare(b.source) || a.label.localeCompare(b.label)
+        );
+        this._mappers = sorted;
+        this._sendMappers(true);
+      }
     } finally {
       this._scanning = false;
-      this._sendMappers();
+      this._sendMappers(hasFolders);
     }
   }
 

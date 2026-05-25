@@ -10,8 +10,9 @@ declare function acquireVsCodeApi(): {
 };
 
 type ExtToWebMsg =
-  | { type: 'setMappers'; items: MapperFile[] }
-  | { type: 'setDisplayMode'; mode: 'flat' | 'tree' };
+  | { type: 'setMappers'; items: MapperFile[]; hasFolders: boolean }
+  | { type: 'setDisplayMode'; mode: 'flat' | 'tree' }
+  | { type: 'setLoading'; loading: boolean };
 
 type WebToExtMsg =
   | { type: 'openQuery'; query: ParsedQuery; mapperFile: MapperFile }
@@ -24,6 +25,8 @@ const vscode = acquireVsCodeApi();
 // ---------------------------------------------------------------------------
 
 let allMappers: MapperFile[] = [];
+let hasFolders = false;
+let loading = true;
 let displayMode: 'flat' | 'tree' = 'flat';
 const expanded = new Set<string>(); // expanded file paths
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -67,16 +70,29 @@ function render(): void {
   const files = filteredFiles();
   const f = filterText();
 
+  if (loading) {
+    container.innerHTML = `<div class="empty">Scanning…</div>`;
+    return;
+  }
+
   if (allMappers.length === 0) {
-    container.innerHTML = `
-      <div class="empty">
-        No scan folders configured.<br>
-        <a id="link-settings" href="#">Open Settings</a> to specify mapper folders.
-      </div>`;
-    document.getElementById('link-settings')?.addEventListener('click', e => {
-      e.preventDefault();
-      vscode.postMessage({ type: 'openSettings' });
-    });
+    if (!hasFolders) {
+      container.innerHTML = `
+        <div class="empty">
+          No scan folders configured.<br>
+          <a id="link-settings" href="#">Open Settings</a> to specify mapper folders.
+        </div>`;
+      document.getElementById('link-settings')?.addEventListener('click', e => {
+        e.preventDefault();
+        vscode.postMessage({ type: 'openSettings' });
+      });
+    } else {
+      container.innerHTML = `
+        <div class="empty">
+          No mapper files found.<br>
+          Check that the configured folders contain .java or .xml mapper files.
+        </div>`;
+    }
     return;
   }
 
@@ -170,7 +186,12 @@ function wireEvents(container: HTMLElement): void {
 
 window.addEventListener('message', (event: MessageEvent<ExtToWebMsg>) => {
   const msg = event.data;
-  if (msg.type === 'setMappers') {
+  if (msg.type === 'setLoading') {
+    loading = msg.loading;
+    render();
+  } else if (msg.type === 'setMappers') {
+    loading = false;
+    hasFolders = msg.hasFolders;
     allMappers = msg.items;
     // Auto-expand all files when there are few results
     if (allMappers.length <= 5) {

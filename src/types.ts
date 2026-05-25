@@ -152,7 +152,8 @@ export interface SheetMapping {
 // Extension → Dataset sidebar webview
 export type DatasetToWebMsg =
   | { type: 'setFiles'; items: DatasetFile[] }
-  | { type: 'setDisplayMode'; mode: 'flat' | 'tree' };
+  | { type: 'setDisplayMode'; mode: 'flat' | 'tree' }
+  | { type: 'setLoading'; loading: boolean };
 
 // Dataset sidebar webview → Extension
 export type WebToDatasetMsg =

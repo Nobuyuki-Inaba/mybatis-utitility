@@ -5,46 +5,46 @@ import { DatasetFile } from './types';
 /**
  * Scan the workspace for CSV and Excel fixture files under convention directories.
  * globs: array of glob patterns (e.g. ["**\/fixtures\/**", "**\/testdata\/**"])
+ *
+ * All findFiles calls run in parallel. xlsx sheet names are NOT read here —
+ * they are loaded lazily when the DatasetLoaderPanel opens the file.
  */
 export async function scanDatasetFiles(globs: string[]): Promise<DatasetFile[]> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (!workspaceFolders || workspaceFolders.length === 0) { return []; }
 
-  const results: DatasetFile[] = [];
-  const seen = new Set<string>();
+  // Build all (folder × glob × ext) tasks and run them in parallel
+  const tasks: Thenable<vscode.Uri[]>[] = [];
+  const taskExts: string[] = [];
 
   for (const folder of workspaceFolders) {
     for (const globPattern of globs) {
-      // Append file extension filter to each directory glob
       for (const ext of ['csv', 'xlsx']) {
         const pattern = new vscode.RelativePattern(folder, `${globPattern.replace(/\/$/, '')}/*.${ext}`);
-        const found = await vscode.workspace.findFiles(pattern, '**/node_modules/**', 200);
-        for (const uri of found) {
-          const fsPath = uri.fsPath;
-          if (seen.has(fsPath)) { continue; }
-          seen.add(fsPath);
-          const label = path.basename(fsPath);
-          const fileType = ext as 'csv' | 'xlsx';
-          const sheets = await readSheetNames(fsPath, fileType);
-          results.push({ path: fsPath, label, fileType, sheets });
-        }
+        tasks.push(vscode.workspace.findFiles(pattern, '{**/node_modules/**,**/target/**,**/build/**,**/dist/**,**/out/**,.git/**,**/.gradle/**}', 200));
+        taskExts.push(ext);
       }
     }
   }
 
-  return results.sort((a, b) => a.label.localeCompare(b.label));
-}
+  const allResults = await Promise.all(tasks);
 
-async function readSheetNames(filePath: string, fileType: 'csv' | 'xlsx'): Promise<string[]> {
-  if (fileType === 'csv') {
-    return [path.basename(filePath, '.csv')];
+  const seen = new Set<string>();
+  const results: DatasetFile[] = [];
+
+  for (let i = 0; i < allResults.length; i++) {
+    const ext = taskExts[i];
+    for (const uri of allResults[i]) {
+      const fsPath = uri.fsPath;
+      if (seen.has(fsPath)) { continue; }
+      seen.add(fsPath);
+      const label = path.basename(fsPath);
+      const fileType = ext as 'csv' | 'xlsx';
+      // csv: use filename as sheet name; xlsx: defer sheet reading to loader panel
+      const sheets = fileType === 'csv' ? [path.basename(fsPath, '.csv')] : [];
+      results.push({ path: fsPath, label, fileType, sheets });
+    }
   }
-  try {
-    const ExcelJS = await import('exceljs');
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(filePath);
-    return workbook.worksheets.map(ws => ws.name);
-  } catch {
-    return [];
-  }
+
+  return results.sort((a, b) => a.label.localeCompare(b.label));
 }
