@@ -2,7 +2,7 @@
   "name": "mybatis-utility",
   "displayName": "MyBatis Utility",
   "description": "MyBatis query executor — browse Mapper files, fill placeholders, run queries against configured databases",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "publisher": "nobuyuki-inaba",
   "license": "MIT",
   "repository": {
@@ -102,6 +102,26 @@
         "command": "mybatisUtility.setDatasetTreeView",
         "title": "Switch to Hierarchical View",
         "icon": "$(list-tree)"
+      },
+      {
+        "command": "mybatisUtility.addMapperInclude",
+        "title": "Add Mapper Include Pattern",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "mybatisUtility.addDatasetInclude",
+        "title": "Add Dataset Include Pattern",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "mybatisUtility.addMapperExclude",
+        "title": "Add Mapper Exclude Pattern",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "mybatisUtility.addDatasetExclude",
+        "title": "Add Dataset Exclude Pattern",
+        "icon": "$(filter)"
       }
     ],
     "menus": {
@@ -110,6 +130,16 @@
           "command": "mybatisUtility.refreshMappers",
           "when": "view == mybatisUtility.mapperView",
           "group": "navigation@1"
+        },
+        {
+          "command": "mybatisUtility.addMapperInclude",
+          "when": "view == mybatisUtility.mapperView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mybatisUtility.addMapperExclude",
+          "when": "view == mybatisUtility.mapperView",
+          "group": "navigation@2"
         },
         {
           "command": "mybatisUtility.setTreeView",
@@ -130,6 +160,16 @@
           "command": "mybatisUtility.refreshDataset",
           "when": "view == mybatisUtility.datasetView",
           "group": "navigation@1"
+        },
+        {
+          "command": "mybatisUtility.addDatasetInclude",
+          "when": "view == mybatisUtility.datasetView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mybatisUtility.addDatasetExclude",
+          "when": "view == mybatisUtility.datasetView",
+          "group": "navigation@2"
         },
         {
           "command": "mybatisUtility.setDatasetTreeView",
@@ -172,18 +212,30 @@
             "**/mapper",
             "**/repository"
           ],
+          "scope": "resource",
           "markdownDescription": "Glob patterns (relative to workspace root) for MyBatis Mapper files. Empty = no scan.\n\n- `**` — entire workspace\n- `src/main/java` — exact folder\n- `src/**` — src and all sub-folders\n- `**/mapper` — any folder named `mapper`\n\nExample: `[\"src/main/java\", \"src/main/resources/mapper\"]`"
+        },
+        "mybatisUtility.scanExclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "Additional glob patterns to exclude from Mapper scanning (takes priority over `scanFolders`). The following are always excluded: `node_modules`, `target`, `build`, `out`, `dist`, `.git`, `.gradle`, `src/test`, `src/test-*`.\n\nExample: `[\"**/generated/**\", \"**/legacy/**\"]`"
         },
         "mybatisUtility.fetchLimit": {
           "type": "number",
           "default": 5000,
           "minimum": 1,
+          "scope": "resource",
           "markdownDescription": "Maximum number of rows fetched from the database per query execution. Increase for large result sets, decrease to conserve memory."
         },
         "mybatisUtility.pageSize": {
           "type": "number",
           "default": 200,
           "minimum": 1,
+          "scope": "resource",
           "markdownDescription": "Number of rows displayed per page in the query result panel."
         },
         "mybatisUtility.datasetDirectories": {
@@ -200,7 +252,17 @@
             "**/datasets/**",
             "**/src/test/resources/**"
           ],
+          "scope": "resource",
           "markdownDescription": "Glob patterns for discovering dataset (fixture) CSV and Excel files in the workspace. Only files under matching directories are shown in the Dataset panel."
+        },
+        "mybatisUtility.datasetExclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "Additional glob patterns to exclude from Dataset scanning (takes priority over `datasetDirectories`).\n\nExample: `[\"**/archived/**\"]`"
         }
       }
     }

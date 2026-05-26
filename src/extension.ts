@@ -123,13 +123,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mybatisUtility.addMapperInclude', async () => {
+      await addIncludePattern('scanFolders', 'Mapper', mapperProvider.refresh.bind(mapperProvider));
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mybatisUtility.addDatasetInclude', async () => {
+      await addIncludePattern('datasetDirectories', 'Dataset', datasetProvider.refresh.bind(datasetProvider));
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mybatisUtility.addMapperExclude', async () => {
+      await addExcludePattern('scanExclude', 'Mapper', mapperProvider.refresh.bind(mapperProvider));
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mybatisUtility.addDatasetExclude', async () => {
+      await addExcludePattern('datasetExclude', 'Dataset', datasetProvider.refresh.bind(datasetProvider));
+    })
+  );
+
   // Re-scan when relevant settings change
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(e => {
-      if (e.affectsConfiguration('mybatisUtility.scanFolders')) {
+      if (e.affectsConfiguration('mybatisUtility.scanFolders') ||
+          e.affectsConfiguration('mybatisUtility.scanExclude')) {
         mapperProvider.refresh();
       }
-      if (e.affectsConfiguration('mybatisUtility.datasetDirectories')) {
+      if (e.affectsConfiguration('mybatisUtility.datasetDirectories') ||
+          e.affectsConfiguration('mybatisUtility.datasetExclude')) {
         datasetProvider.refresh();
       }
     })
@@ -248,4 +274,254 @@ async function prompt(
 
 export function deactivate(): void {
   // nothing
+}
+
+// ---------------------------------------------------------------------------
+// Include pattern picker
+// ---------------------------------------------------------------------------
+
+/** Common directory names likely to contain MyBatis mapper files. */
+const MAPPER_INCLUDE_PRESETS = [
+  '**/mapper', '**/repository', '**/dao', '**/mappers',
+  'src/main/java', 'src/main/resources/mapper',
+];
+
+/** Common directory patterns likely to contain fixture / dataset files. */
+const DATASET_INCLUDE_PRESETS = [
+  '**/fixtures/**', '**/fixture/**', '**/testdata/**', '**/test-data/**',
+  '**/dataset/**', '**/datasets/**', '**/src/test/resources/**',
+];
+
+async function addIncludePattern(
+  settingKey: string,
+  panelLabel: string,
+  refresh: () => void
+): Promise<void> {
+  const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
+  if (workspaceFolders.length === 0) {
+    void vscode.window.showWarningMessage('No workspace folder is open.');
+    return;
+  }
+
+  const isDataset = settingKey === 'datasetDirectories';
+  const presets = isDataset ? DATASET_INCLUDE_PRESETS : MAPPER_INCLUDE_PRESETS;
+
+  // Collect relative paths (top 2 levels) from workspace root.
+  // Using actual paths avoids ** prefix, which would cause full-workspace traversal.
+  const foundRelPaths = new Set<string>();
+  for (const folder of workspaceFolders) {
+    try {
+      const top = await vscode.workspace.fs.readDirectory(folder.uri);
+      for (const [name, type] of top) {
+        if (type !== vscode.FileType.Directory) { continue; }
+        if (name.startsWith('.') || ALWAYS_EXCLUDED.has(name)) { continue; }
+        foundRelPaths.add(name);
+        try {
+          const sub = await vscode.workspace.fs.readDirectory(
+            vscode.Uri.joinPath(folder.uri, name)
+          );
+          for (const [subName, subType] of sub) {
+            if (subType === vscode.FileType.Directory && !subName.startsWith('.') && !ALWAYS_EXCLUDED.has(subName)) {
+              foundRelPaths.add(`${name}/${subName}`);
+            }
+          }
+        } catch { /* skip */ }
+      }
+    } catch { /* skip */ }
+  }
+
+  // For workspace-detected paths: use the exact relative path (no leading **).
+  // Dataset adds /** suffix so subdirectory files are matched; mapper uses the path as-is
+  // (makeGlob handles the expansion to direct + recursive patterns).
+  const toPattern = (relPath: string): string =>
+    isDataset ? `${relPath}/**` : relPath;
+
+  const items: vscode.QuickPickItem[] = [];
+
+  const foundSorted = [...foundRelPaths].sort();
+  if (foundSorted.length > 0) {
+    items.push({ label: 'Workspace directories', kind: vscode.QuickPickItemKind.Separator });
+    for (const relPath of foundSorted) {
+      items.push({ label: toPattern(relPath), description: relPath });
+    }
+  }
+
+  // Preset patterns (** wildcards) shown only when not already covered by a detected path.
+  // These are intentionally broad — use them when the exact location is unknown.
+  const foundLeaves = new Set([...foundRelPaths].map(p => p.split('/').pop()!));
+  const presetItems = presets.filter(p => {
+    const leaf = p.replace(/^\*\*\//, '').replace(/\/\*\*$/, '').replace(/\/$/, '').split('/').pop()!;
+    return !foundLeaves.has(leaf);
+  });
+  if (presetItems.length > 0) {
+    items.push({ label: 'Common patterns', kind: vscode.QuickPickItemKind.Separator });
+    for (const p of presetItems) {
+      items.push({ label: p });
+    }
+  }
+
+  items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
+  items.push({ label: '$(edit) Enter custom pattern…' });
+
+  const picked = await vscode.window.showQuickPick(items, {
+    title: `Add ${panelLabel} Include Pattern`,
+    placeHolder: 'Select a directory or enter a custom glob',
+  });
+  if (!picked || picked.kind === vscode.QuickPickItemKind.Separator) { return; }
+
+  let pattern: string;
+  if (picked.label.startsWith('$(edit)')) {
+    const hint = isDataset ? '**/fixtures/**' : '**/mapper';
+    const custom = await vscode.window.showInputBox({
+      title: `Add ${panelLabel} Include Pattern`,
+      prompt: 'Enter a glob pattern to include (e.g. ' + hint + ')',
+      placeHolder: hint,
+      validateInput: v => v.trim() ? undefined : 'Pattern cannot be empty',
+    });
+    if (!custom) { return; }
+    pattern = custom.trim();
+  } else {
+    pattern = picked.label;
+  }
+
+  // Determine target folder
+  let targetFolder: vscode.WorkspaceFolder | undefined;
+  if (workspaceFolders.length === 1) {
+    targetFolder = workspaceFolders[0];
+  } else {
+    const folderItem = await vscode.window.showQuickPick(
+      workspaceFolders.map(f => ({ label: f.name, description: f.uri.fsPath, folder: f })),
+      { title: 'Apply to which workspace folder?' }
+    );
+    if (!folderItem) { return; }
+    targetFolder = folderItem.folder;
+  }
+
+  const config = vscode.workspace.getConfiguration('mybatisUtility', targetFolder.uri);
+  const current = config.get<string[]>(settingKey, []);
+  if (current.includes(pattern)) {
+    void vscode.window.showInformationMessage(`Already included: ${pattern}`);
+    return;
+  }
+
+  await config.update(settingKey, [...current, pattern], vscode.ConfigurationTarget.WorkspaceFolder);
+  void vscode.window.showInformationMessage(`Added include: ${pattern}`);
+  refresh();
+}
+
+// ---------------------------------------------------------------------------
+// Exclude pattern picker
+// ---------------------------------------------------------------------------
+
+/** Directories always in the default exclude list — no value showing them as candidates. */
+const ALWAYS_EXCLUDED = new Set([
+  'node_modules', 'target', 'build', 'out', 'dist', '.git', '.gradle',
+]);
+
+/** Common directory names users often want to exclude, shown when not already in the workspace. */
+const PRESET_EXCLUDES = [
+  'generated', 'gen', 'legacy', 'archived', 'backup', 'vendor', 'tmp', 'temp', 'stub', 'mock',
+];
+
+async function addExcludePattern(
+  settingKey: string,
+  panelLabel: string,
+  refresh: () => void
+): Promise<void> {
+  const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
+  if (workspaceFolders.length === 0) {
+    void vscode.window.showWarningMessage('No workspace folder is open.');
+    return;
+  }
+
+  // Collect unique directory names found at the top two levels of all workspace folders
+  const foundDirNames = new Set<string>();
+  for (const folder of workspaceFolders) {
+    try {
+      const top = await vscode.workspace.fs.readDirectory(folder.uri);
+      for (const [name, type] of top) {
+        if (type !== vscode.FileType.Directory) { continue; }
+        if (name.startsWith('.') || ALWAYS_EXCLUDED.has(name)) { continue; }
+        foundDirNames.add(name);
+
+        // One level deeper
+        try {
+          const sub = await vscode.workspace.fs.readDirectory(
+            vscode.Uri.joinPath(folder.uri, name)
+          );
+          for (const [subName, subType] of sub) {
+            if (subType === vscode.FileType.Directory && !subName.startsWith('.') && !ALWAYS_EXCLUDED.has(subName)) {
+              foundDirNames.add(subName);
+            }
+          }
+        } catch { /* skip unreadable dirs */ }
+      }
+    } catch { /* skip unreadable folders */ }
+  }
+
+  // Build QuickPick items
+  const items: vscode.QuickPickItem[] = [];
+
+  const foundSorted = [...foundDirNames].sort();
+  if (foundSorted.length > 0) {
+    items.push({ label: 'Workspace directories', kind: vscode.QuickPickItemKind.Separator });
+    for (const name of foundSorted) {
+      items.push({ label: `**/${name}/**`, description: `directory: ${name}` });
+    }
+  }
+
+  const presetItems = PRESET_EXCLUDES.filter(p => !foundDirNames.has(p));
+  if (presetItems.length > 0) {
+    items.push({ label: 'Common patterns', kind: vscode.QuickPickItemKind.Separator });
+    for (const p of presetItems) {
+      items.push({ label: `**/${p}/**` });
+    }
+  }
+
+  items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
+  items.push({ label: '$(edit) Enter custom pattern…' });
+
+  const picked = await vscode.window.showQuickPick(items, {
+    title: `Add ${panelLabel} Exclude Pattern`,
+    placeHolder: 'Select a directory or enter a custom glob',
+  });
+  if (!picked || picked.kind === vscode.QuickPickItemKind.Separator) { return; }
+
+  let pattern: string;
+  if (picked.label.startsWith('$(edit)')) {
+    const custom = await vscode.window.showInputBox({
+      title: `Add ${panelLabel} Exclude Pattern`,
+      prompt: 'Enter a glob pattern to exclude (e.g. **/generated/**)',
+      placeHolder: '**/generated/**',
+      validateInput: v => v.trim() ? undefined : 'Pattern cannot be empty',
+    });
+    if (!custom) { return; }
+    pattern = custom.trim();
+  } else {
+    pattern = picked.label;
+  }
+
+  // Determine which folder's settings to update
+  let targetFolder: vscode.WorkspaceFolder | undefined;
+  if (workspaceFolders.length === 1) {
+    targetFolder = workspaceFolders[0];
+  } else {
+    const folderItem = await vscode.window.showQuickPick(
+      workspaceFolders.map(f => ({ label: f.name, description: f.uri.fsPath, folder: f })),
+      { title: 'Apply to which workspace folder?' }
+    );
+    if (!folderItem) { return; }
+    targetFolder = folderItem.folder;
+  }
+
+  const config = vscode.workspace.getConfiguration('mybatisUtility', targetFolder.uri);
+  const current = config.get<string[]>(settingKey, []);
+  if (current.includes(pattern)) {
+    void vscode.window.showInformationMessage(`Already excluded: ${pattern}`);
+    return;
+  }
+
+  await config.update(settingKey, [...current, pattern], vscode.ConfigurationTarget.WorkspaceFolder);
+  void vscode.window.showInformationMessage(`Added exclude: ${pattern}`);
+  refresh();
 }

@@ -4,31 +4,7 @@ import { MapperFile } from './types';
 import { parseFile } from './mapperScanner';
 import { QueryPanel } from './queryPanel';
 import { ConfigManager } from './configManager';
-
-const EXCLUDE = '{**/node_modules/**,**/target/**,**/build/**,**/out/**,**/dist/**,.git/**,**/.gradle/**,**/src/test/**,**/src/test-**/**}';
-
-/**
- * Build a glob pattern for each folder, covering both direct children and nested files.
- * Using only "folder/**\/ext" risks missing files directly in the folder on some glob engines,
- * so we emit both "folder/ext" and "folder\/**\/ext" and wrap in braces when there are multiple.
- */
-function makeGlob(folders: string[], ext: string): string {
-  const patterns: string[] = [];
-  for (const f of folders) {
-    // Normalize: strip trailing slashes AND trailing /** or /* so both cases
-    // get both patterns (direct children + nested).
-    // e.g. "**/mapper/**" → "**/mapper", "src/main/java" → "src/main/java"
-    const p = f.replace(/\\/g, '/').replace(/\/+$/, '').replace(/\/\*+$/, '');
-    if (p.endsWith('*')) {
-      // Still a wildcard after stripping — e.g. "**/mapper*" → keep as-is
-      patterns.push(`${p}/${ext}`);
-    } else {
-      patterns.push(`${p}/${ext}`);
-      patterns.push(`${p}/**/${ext}`);
-    }
-  }
-  return patterns.length === 1 ? patterns[0] : `{${patterns.join(',')}}`;
-}
+import { makeGlob, buildExcludeGlob, MAPPER_DEFAULT_EXCLUDE } from './scanUtils';
 
 function randomNonce(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -108,26 +84,37 @@ export class MapperWebviewProvider implements vscode.WebviewViewProvider {
     void this._view?.webview.postMessage({ type: 'setLoading', loading: true });
     let hasFolders = false;
     try {
-      const config = vscode.workspace.getConfiguration('mybatisUtility');
-      const scanFolders: string[] = config.get<string[]>('scanFolders', []);
-      hasFolders = scanFolders.length > 0;
+      const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
+      const allUris: vscode.Uri[] = [];
+
+      // Collect URIs per workspace folder using per-folder settings
+      for (const folder of workspaceFolders) {
+        const folderConfig = vscode.workspace.getConfiguration('mybatisUtility', folder.uri);
+        const scanFolders: string[] = folderConfig.get<string[]>('scanFolders', []);
+        const scanExclude: string[] = folderConfig.get<string[]>('scanExclude', []);
+
+        if (scanFolders.length === 0) { continue; }
+        hasFolders = true;
+
+        const excludeGlob = buildExcludeGlob(MAPPER_DEFAULT_EXCLUDE, scanExclude);
+        const javaPattern = new vscode.RelativePattern(folder, makeGlob(scanFolders, '*.java'));
+        const xmlPattern  = new vscode.RelativePattern(folder, makeGlob(scanFolders, '*.xml'));
+
+        const [javaUris, xmlUris] = await Promise.all([
+          vscode.workspace.findFiles(javaPattern, excludeGlob),
+          vscode.workspace.findFiles(xmlPattern,  excludeGlob),
+        ]);
+        allUris.push(...javaUris, ...xmlUris);
+      }
 
       if (!hasFolders) {
         this._mappers = [];
         return;
       }
 
-      const javaGlob = makeGlob(scanFolders, '*.java');
-      const xmlGlob  = makeGlob(scanFolders, '*.xml');
-
-      const [javaUris, xmlUris] = await Promise.all([
-        vscode.workspace.findFiles(javaGlob, EXCLUDE),
-        vscode.workspace.findFiles(xmlGlob,  EXCLUDE),
-      ]);
-
       // Group URIs by parent directory so results can be streamed folder by folder
       const byDir = new Map<string, vscode.Uri[]>();
-      for (const uri of [...javaUris, ...xmlUris]) {
+      for (const uri of allUris) {
         const dir = path.dirname(uri.fsPath);
         if (!byDir.has(dir)) { byDir.set(dir, []); }
         byDir.get(dir)!.push(uri);

@@ -6,11 +6,11 @@ VSCode extension for MyBatis developers. Browse Mapper files, fill query paramet
 
 ## Features
 
-- **Mapper panel** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type. Supports inline SQL annotations (including Java 15+ **text blocks** `"""..."""`) and XML-mapped interfaces. Results stream in folder-by-folder so the panel populates progressively on large projects. Scan results are cached — switching to another panel and back reuses the result instantly without rescanning
+- **Mapper panel** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type. Supports inline SQL annotations (including Java 15+ **text blocks** `"""..."""`) and XML-mapped interfaces. Results stream in folder-by-folder so the panel populates progressively on large projects. Scan results are cached — switching to another panel and back reuses the result instantly without rescanning. MyBatis Generator `@SelectProvider` / `@InsertProvider` etc. are automatically skipped (no inline SQL to browse)
 - **Query panel** — Click a query to open it, edit SQL inline with **syntax highlighting**, fill typed parameters (`#{param}`), and execute
 - **Live SQL preview** — Click **Preview SQL** to see the final SQL with all parameters substituted inline, before executing
 - **Explain plan** — Click **Explain** to run `EXPLAIN` on the current SQL and inspect the query plan
-- **Dataset loader** — **Dataset** panel scans for CSV / XLSX fixture files in your workspace. Filter files in real time with the search input, switch between flat and hierarchical views, click any file to open the loader, preview data, map sheets to database tables, and bulk-load with one click (clears and reloads the target table)
+- **Dataset loader** — **Dataset** panel scans for CSV / XLSX fixture files in your workspace. Filter files in real time with the search input, switch between flat and hierarchical views, click any file to open the loader, preview data, map sheets to database tables, and bulk-load with one click (clears and reloads the target table). XLSX sheet names are read automatically when the loader opens
 - **Parameter presets** — Save named sets of parameter values to `.vscode/mybatis-utility/params.yaml`. Load them from a dropdown to re-fill values instantly. The file can be committed and shared across the team
 - **Multi-database support** — SQLite, PostgreSQL, MySQL (extensible driver registry)
 - **Pagination** — Large result sets paginated (configurable page size)
@@ -27,9 +27,9 @@ VSCode extension for MyBatis developers. Browse Mapper files, fill query paramet
 
 ### 1. Configure scan folders
 
-Open Settings (`Ctrl+,`) and search for **MyBatis Utility**.
+Open Settings (`Ctrl+,`) and search for **MyBatis Utility**, or use the **`$(new-folder)`** and **`$(filter)`** buttons in the Mapper panel title bar to add include / exclude patterns interactively — the picker shows the actual directories found in your workspace so there is no need to type paths manually.
 
-Set **Scan Folders** to the directories that contain your Mapper files:
+To set patterns directly in settings, set **Scan Folders** to the directories that contain your Mapper files:
 
 ```json
 "mybatisUtility.scanFolders": [
@@ -39,6 +39,16 @@ Set **Scan Folders** to the directories that contain your Mapper files:
 ```
 
 Default: `["**/mapper", "**/repository"]` — works for most Spring Boot / Maven projects out of the box.
+
+To exclude specific directories from the scan (e.g. generated code), use **Scan Exclude**:
+
+```json
+"mybatisUtility.scanExclude": ["**/generated/**", "**/legacy/**"]
+```
+
+`node_modules`, `target`, `build`, `out`, `dist`, `.gradle`, `src/test`, `src/test-*` are always excluded.
+
+> **Per-folder settings**: in a multi-root workspace each folder can have its own `scanFolders` and `scanExclude` configured in its `.vscode/settings.json`. All settings have `"scope": "resource"` so VSCode applies the correct value per folder automatically.
 
 > **Maven multi-module projects**: open the root project folder in VSCode. The default `**/mapper` pattern finds mapper directories in every module automatically.
 
@@ -82,12 +92,15 @@ Presets are saved to `.vscode/mybatis-utility/params.yaml` in your workspace. Ad
 
 ### 4. Load test data (Dataset panel)
 
-The **Dataset** panel (in the sidebar) automatically scans for CSV and XLSX fixture files in common locations (`fixtures/`, `testdata/`, `dataset/`, `src/test/resources/`, etc.). Use the filter input at the top to narrow results in real time, and use the list/tree icon in the title bar to switch between flat and hierarchical views. Both view preferences are saved across sessions.
+The **Dataset** panel (in the sidebar) automatically scans for CSV and XLSX fixture files in common locations (`fixtures/`, `testdata/`, `dataset/`, `src/test/resources/`, etc.). Use the **`$(new-folder)`** and **`$(filter)`** buttons in the Dataset panel title bar to add include / exclude patterns interactively. Use the filter input at the top to narrow results in real time, and use the list/tree icon in the title bar to switch between flat and hierarchical views. Both view preferences are saved across sessions.
 
 1. Click any file in the **Dataset** panel to open the loader
-2. Select a sheet (XLSX) or the file (CSV) and enter the target table name
-3. Click **Preview** to inspect the first 100 rows before loading
-4. Click **Load** — this will **delete all existing rows** from the target table and re-insert data from the file
+2. For XLSX files, sheet names are read automatically and displayed as rows in the mapping table
+3. Enter the target table name for each sheet you want to load
+4. Click **Preview** to inspect the first 100 rows before loading
+5. Click **Load** — this will **delete all existing rows** from the target table and re-insert data from the file
+
+To customise which directories are scanned, use **Dataset Directories** and **Dataset Exclude** in settings, or the interactive picker buttons in the panel title bar.
 
 > **Warning**: The load operation is destructive. Always use it against a development/test database, not production.
 
@@ -100,12 +113,16 @@ The **Dataset** panel (in the sidebar) automatically scans for CSV and XLSX fixt
 
 ## Settings
 
+All settings support per-folder configuration in multi-root workspaces (scope: `resource`).
+
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `mybatisUtility.scanFolders` | `["**/mapper", "**/repository"]` | Glob patterns for mapper file search. Empty = no scan. `target/`, `build/`, `.gradle/`, `src/test/` are always excluded. |
+| `mybatisUtility.scanFolders` | `["**/mapper", "**/repository"]` | Glob patterns for mapper file search. Empty = no scan. Use the `$(new-folder)` button in the Mapper panel to add patterns interactively. |
+| `mybatisUtility.scanExclude` | `[]` | Additional glob patterns to exclude from mapper scanning. Takes priority over `scanFolders`. `node_modules`, `target`, `build`, `out`, `dist`, `.gradle`, `src/test`, `src/test-*` are always excluded. Use the `$(filter)` button to add patterns interactively. |
 | `mybatisUtility.fetchLimit` | `5000` | Max rows fetched per query. Reduce to save memory. |
 | `mybatisUtility.pageSize` | `200` | Rows displayed per page in the result panel. |
-| `mybatisUtility.datasetDirectories` | `["**/fixture/**", "**/fixtures/**", ...]` | Glob patterns for fixture files shown in the Dataset panel. `target/`, `build/`, `.gradle/`, `node_modules/` are always excluded. |
+| `mybatisUtility.datasetDirectories` | `["**/fixture/**", "**/fixtures/**", ...]` | Glob patterns for fixture files shown in the Dataset panel. Use the `$(new-folder)` button to add patterns interactively. |
+| `mybatisUtility.datasetExclude` | `[]` | Additional glob patterns to exclude from dataset scanning. Takes priority over `datasetDirectories`. `node_modules`, `target`, `build`, `dist`, `out`, `.gradle` are always excluded. |
 
 Open settings with the **gear icon** (⚙) in the Mappers panel title bar.
 

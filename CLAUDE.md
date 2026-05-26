@@ -29,22 +29,24 @@ npm test    # runs test/**/*.test.ts
 
 ```
 src/
-  extension.ts              # activation, command registration, quick-add wizard
+  extension.ts              # activation, command registration, quick-add wizard; addIncludePattern() / addExcludePattern() QuickPick commands
   types.ts                  # shared type definitions (DbConnectionConfig, ParamEntry, ExtToWebMsg, …)
   configManager.ts          # read/write DB connections + passwords (VSCode Secret Storage)
-  mapperWebviewProvider.ts  # WebviewViewProvider — Mappers panel (filter input + scan logic)
+  mapperWebviewProvider.ts  # WebviewViewProvider — Mappers panel; _scan() iterates workspaceFolders with per-folder config (scanFolders + scanExclude)
   mapperProvider.ts         # TreeDataProvider helpers (FolderItem, MapperFileItem, MapperQueryItem)
-  mapperScanner.ts          # pure parsing logic (no VSCode API — unit-testable via FileReader interface)
+  mapperScanner.ts          # pure parsing logic; isProviderMapper() skips @SelectProvider/@InsertProvider etc. files
+  scanUtils.ts              # pure helpers: makeGlob(), buildExcludeGlob(), MAPPER_DEFAULT_EXCLUDE, DATASET_DEFAULT_EXCLUDE
+  sheetReader.ts            # SheetReader interface + CsvReader + XlsxReader + getSheetReader() registry; registerSheetReader() for new formats
   queryParser.ts            # extract #{} placeholders, buildExecutableSql(), formatValue()
   queryPanel.ts             # WebviewPanel for query execution (singleton); handles execute/explain/preview
   configPanel.ts            # WebviewPanel for DB connection management (singleton)
   databaseProvider.ts       # TreeDataProvider for the Databases sidebar view
   dbManager.ts              # driver registry — registerDriver(type, driver); also bulkLoad()
   extensionContext.ts       # setExtensionPath() / getExtensionPath() for sql.js WASM location
-  datasetWebviewProvider.ts # WebviewViewProvider — Dataset panel (filter input, flat/tree toggle, scans CSV/XLSX fixture files)
-  datasetLoaderPanel.ts     # WebviewPanel for bulk-loading a fixture file into a table (singleton)
-  datasetLoader.ts          # readSheetData() via ExcelJS; loadSheetToDb() via dbManager.bulkLoad()
-  datasetScanner.ts         # scanDatasetFiles() — finds CSV/XLSX under configured directories; all findFiles calls run in parallel; xlsx sheet names are NOT read here (deferred to DatasetLoaderPanel)
+  datasetWebviewProvider.ts # WebviewViewProvider — Dataset panel; _scan() builds per-folder FolderScanConfig[] from datasetDirectories + datasetExclude
+  datasetLoaderPanel.ts     # WebviewPanel for bulk-loading; _sendInit() reads XLSX sheet names via getSheetReader().listSheets() before sending init to webview
+  datasetLoader.ts          # readSheetData() delegates to getSheetReader(); loadSheetToDb() via dbManager.bulkLoad()
+  datasetScanner.ts         # scanDatasetFiles(FolderScanConfig[]) — per-folder include+exclude; xlsx sheet names deferred to DatasetLoaderPanel
   queryParser.ts            # JAVA_ANNOTATION_RE supports single-quoted strings AND Java 15+ text blocks ("""); parseJavaMapperMethods() handles @Mapper interfaces with no inline SQL
   drivers/
     sqlite.ts               # sql.js (pure WASM, no native build required); implements bulkLoad
@@ -59,7 +61,9 @@ media/src/
   datasetLoaderPanel.ts     # webview script for Dataset Loader (preview table, sheet→table mapping)
 
 test/
-  queryParser.test.ts       # unit tests for queryParser.ts (parseJavaMapper, parseJavaMapperMethods, parseXmlMapper, extractPlaceholders, buildExecutableSql) — not included in VSIX
+  queryParser.test.ts       # unit tests for queryParser.ts — not included in VSIX
+  datasetLoader.test.ts     # unit tests for CsvReader, XlsxReader, getSheetReader, readSheetData
+  scanPatterns.test.ts      # unit tests for makeGlob, buildExcludeGlob, isProviderMapper, parseFile(provider skip)
 
 sample/                     # test fixtures
   src/main/java/…/          # Java @Mapper samples (SampleMapper, UserMapper)
@@ -90,6 +94,12 @@ The current Export CSV exports fetched rows (up to fetchLimit). For true unlimit
 **Adding a new bulk-loadable driver**:
 Each driver must also export `bulkLoad(config, password, tableName, columns, rows)` which deletes all rows from the table and re-inserts them. See existing drivers for the pattern. Register with `registerDriver()` in `dbManager.ts`.
 
+**Adding a new dataset file format** (e.g., JSON, Parquet):
+1. Create a class implementing `SheetReader` in `src/sheetReader.ts` (or a separate file)
+2. Call `registerSheetReader(new MyReader())` on activation
+3. Add the extension to `datasetScanner.ts` alongside `'csv'` and `'xlsx'`
+No other changes needed — `readSheetData()`, `DatasetLoaderPanel`, and `getSheetReader()` all work via the registry.
+
 ### Row limits
 - `fetchLimit` (default 5000): read from `mybatisUtility.fetchLimit` setting at execute time
 - `pageSize` (default 200): sent to webview via `settings` message; webview re-renders on change
@@ -103,9 +113,12 @@ Each driver must also export `bulkLoad(config, password, tableName, columns, row
 - **Scan caching**: `_scanned` flag and `_mappers` / `_hasFolders` cache. First `ready` triggers `_scan()`; subsequent `ready` (panel re-shown) sends cached results immediately — no rescan. `refresh()` resets `_scanned = false` before rescanning.
 - `_scan()` sends `{ type: 'setLoading', loading: true }` first, then processes URIs **folder-by-folder** (sorted by parent dir) and sends partial results after each folder so the panel populates progressively.
 - `hasFolders` distinguishes "scan folders not configured" from "configured but no mappers found" — the webview shows different empty-state messages for each.
-- `makeGlob()` strips trailing `/**` / `/*` then emits both `folder/ext` (direct children) and `folder/**/ext` (nested). Handles patterns like `**/mapper/**` and `**/mapper` identically.
+- `makeGlob()` (in `scanUtils.ts`) strips trailing `/**` / `/*` then emits both `folder/ext` (direct children) and `folder/**/ext` (nested). Handles patterns like `**/mapper/**` and `**/mapper` identically.
+- **Per-folder settings**: `_scan()` iterates `vscode.workspace.workspaceFolders` and calls `getConfiguration('mybatisUtility', folder.uri)` per folder. Include (`scanFolders`) and exclude (`scanExclude`) can differ per folder. All settings have `"scope": "resource"` in `package.json`.
+- **Exclude priority**: `scanExclude` user patterns are appended after `MAPPER_DEFAULT_EXCLUDE` constants. Since VSCode `findFiles` excludes anything matched by the glob, both defaults and user patterns apply equally.
 - `parseJavaMapper()` supports single-quoted strings and Java 15+ text blocks (`"""`). Falls back to `parseJavaMapperMethods()` when no inline SQL is found (XML-mapped or annotation-only interfaces with no SQL yet).
 - `parseJavaMapperMethods()` in `queryParser.ts` extracts method signatures from `@Mapper` interfaces; infers `QueryKind` from method-name prefix; extracts `@Param` values as placeholder names.
+- **`@*Provider` skip**: `isProviderMapper()` in `mapperScanner.ts` detects `@SelectProvider` / `@InsertProvider` / `@UpdateProvider` / `@DeleteProvider`. If no inline SQL is found AND the file has Provider annotations, `parseFile()` returns `null` (MyBatis Generator output, no SQL to browse).
 - Excluded by default: `target/`, `build/`, `out/`, `dist/`, `.gradle/`, `src/test/`, `src/test-**/`.
 - **Initial display mode**: the HTML `<body data-display-mode="...">` attribute carries the persisted mode so the webview script reads the correct initial value without waiting for a postMessage.
 - `setDisplayMode('flat'|'tree')` sends `{ type: 'setDisplayMode', mode }` — called by the title-bar toggle commands in `extension.ts`.
@@ -127,8 +140,9 @@ Dataset panel (`DatasetToWebMsg` / `WebToDatasetMsg` in `types.ts`):
 - Webview → extension: **`{ type: 'ready' }`** (on DOMContentLoaded), `{ type: 'openLoader', file }`, `{ type: 'refresh' }`
 
 Dataset loader panel (`LoaderExtToWebMsg` / `LoaderWebToExtMsg` in `types.ts`):
-- Extension → webview: `init`, `preview { sheet, columns, rows }`, `loadResult { success, message }`
+- Extension → webview: `init` (file with populated `sheets` array), `preview { sheet, columns, rows }`, `loadResult { success, message }`
 - Webview → extension: `getPreview { sheet }`, `load { connectionId, mappings }`
+- **XLSX sheet loading**: `_sendInit()` in `datasetLoaderPanel.ts` is async; for xlsx files with `sheets = []`, it calls `getSheetReader(file.path).listSheets(file.path)` before sending `init`. The scanner defers sheet reading; the loader panel is the point where sheets are actually populated.
 
 ### SQL execution flow
 

@@ -2,26 +2,28 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { DatasetFile } from './types';
 
+export interface FolderScanConfig {
+  folder: vscode.WorkspaceFolder;
+  globs: string[];
+  excludeGlob: string;
+}
+
 /**
- * Scan the workspace for CSV and Excel fixture files under convention directories.
- * globs: array of glob patterns (e.g. ["**\/fixtures\/**", "**\/testdata\/**"])
+ * Scan the workspace for CSV and Excel fixture files.
+ * Each entry in configs provides per-folder include globs and an exclude glob.
  *
  * All findFiles calls run in parallel. xlsx sheet names are NOT read here —
  * they are loaded lazily when the DatasetLoaderPanel opens the file.
  */
-export async function scanDatasetFiles(globs: string[]): Promise<DatasetFile[]> {
-  const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (!workspaceFolders || workspaceFolders.length === 0) { return []; }
-
-  // Build all (folder × glob × ext) tasks and run them in parallel
+export async function scanDatasetFiles(configs: FolderScanConfig[]): Promise<DatasetFile[]> {
   const tasks: Thenable<vscode.Uri[]>[] = [];
   const taskExts: string[] = [];
 
-  for (const folder of workspaceFolders) {
+  for (const { folder, globs, excludeGlob } of configs) {
     for (const globPattern of globs) {
       for (const ext of ['csv', 'xlsx']) {
         const pattern = new vscode.RelativePattern(folder, `${globPattern.replace(/\/$/, '')}/*.${ext}`);
-        tasks.push(vscode.workspace.findFiles(pattern, '{**/node_modules/**,**/target/**,**/build/**,**/dist/**,**/out/**,.git/**,**/.gradle/**}', 200));
+        tasks.push(vscode.workspace.findFiles(pattern, excludeGlob, 200));
         taskExts.push(ext);
       }
     }
