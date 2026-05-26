@@ -1,8 +1,14 @@
 import * as vscode from 'vscode';
 import { DatasetFile, DatasetToWebMsg, WebToDatasetMsg } from './types';
-import { scanDatasetFiles } from './datasetScanner';
+import { scanDatasetFiles, FolderScanConfig } from './datasetScanner';
 import { DatasetLoaderPanel } from './datasetLoaderPanel';
 import { ConfigManager } from './configManager';
+import { buildExcludeGlob, DATASET_DEFAULT_EXCLUDE } from './scanUtils';
+
+const DEFAULT_DATASET_DIRS = [
+  '**/fixture/**', '**/fixtures/**', '**/testdata/**', '**/test-data/**',
+  '**/dataset/**', '**/datasets/**', '**/src/test/resources/**',
+];
 
 function randomNonce(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -76,17 +82,17 @@ export class DatasetWebviewProvider implements vscode.WebviewViewProvider {
     this._scanning = true;
     void this._view?.webview.postMessage({ type: 'setLoading', loading: true } satisfies DatasetToWebMsg);
     try {
-      const config = vscode.workspace.getConfiguration('mybatisUtility');
-      const datasetDirectories: string[] = config.get<string[]>('datasetDirectories', [
-        '**/fixture/**',
-        '**/fixtures/**',
-        '**/testdata/**',
-        '**/test-data/**',
-        '**/dataset/**',
-        '**/datasets/**',
-        '**/src/test/resources/**',
-      ]);
-      this._files = await scanDatasetFiles(datasetDirectories);
+      const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
+      const folderConfigs: FolderScanConfig[] = workspaceFolders
+        .map(folder => {
+          const config = vscode.workspace.getConfiguration('mybatisUtility', folder.uri);
+          const globs = config.get<string[]>('datasetDirectories', DEFAULT_DATASET_DIRS);
+          const userExclude = config.get<string[]>('datasetExclude', []);
+          return { folder, globs, excludeGlob: buildExcludeGlob(DATASET_DEFAULT_EXCLUDE, userExclude) };
+        })
+        .filter(c => c.globs.length > 0);
+
+      this._files = await scanDatasetFiles(folderConfigs);
       const msg: DatasetToWebMsg = { type: 'setFiles', items: this._files };
       void this._view?.webview.postMessage(msg);
     } finally {

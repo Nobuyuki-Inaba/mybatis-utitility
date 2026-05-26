@@ -25,6 +25,14 @@ export function isJavaMapper(content: string): boolean {
 }
 
 /**
+ * Returns true when all SQL is delegated via @*Provider annotations (e.g. MyBatis Generator output).
+ * Such files contain no inline SQL worth browsing.
+ */
+export function isProviderMapper(content: string): boolean {
+  return /@(Select|Insert|Update|Delete)Provider\b/.test(content);
+}
+
+/**
  * Returns true if the XML file is a MyBatis mapper document.
  * Accepts either the DTD reference or the <mapper> root element.
  */
@@ -44,7 +52,11 @@ export function parseFile(filePath: string, content: string): MapperFile | null 
     if (!isJavaMapper(content)) { return null; }
     // First try inline SQL (@Select/@Insert etc.); fall back to method signatures for XML-mapped mappers
     let queries = parseJavaMapper(content);
-    if (queries.length === 0) { queries = parseJavaMapperMethods(content); }
+    if (queries.length === 0) {
+      // Skip files that delegate SQL via @*Provider (e.g. MyBatis Generator output) — no SQL to browse
+      if (isProviderMapper(content)) { return null; }
+      queries = parseJavaMapperMethods(content);
+    }
     if (queries.length === 0) { return null; }
     const label = extractJavaClassName(content) ?? path.basename(filePath, '.java');
     return { source: 'java', filePath, label, queries };

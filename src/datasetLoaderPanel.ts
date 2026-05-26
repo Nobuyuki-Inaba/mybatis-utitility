@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ConfigManager } from './configManager';
 import { DatasetFile, LoaderExtToWebMsg, LoaderWebToExtMsg } from './types';
 import { readSheetData, loadSheetToDb } from './datasetLoader';
+import { getSheetReader } from './sheetReader';
 
 function randomNonce(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -52,19 +53,29 @@ export class DatasetLoaderPanel {
       this._disposables
     );
 
-    setTimeout(() => this._sendInit(), 200);
+    setTimeout(() => { void this._sendInit(); }, 200);
   }
 
   private _reinit(file: DatasetFile, _configMgr: ConfigManager): void {
     this._file = file;
     this._panel.title = `Load: ${file.label}`;
-    this._sendInit();
+    void this._sendInit();
   }
 
-  private _sendInit(): void {
+  private async _sendInit(): Promise<void> {
+    let file = this._file;
+    // Scanner defers sheet reading for non-CSV formats — populate sheet names here
+    if (file.sheets.length === 0) {
+      try {
+        const sheets = await getSheetReader(file.path).listSheets(file.path);
+        file = { ...file, sheets };
+      } catch {
+        // leave sheets empty; the webview will show an empty mapping table
+      }
+    }
     const msg: LoaderExtToWebMsg = {
       type: 'init',
-      file: this._file,
+      file,
       connections: this.configMgr.getConnections(),
     };
     void this._panel.webview.postMessage(msg);
