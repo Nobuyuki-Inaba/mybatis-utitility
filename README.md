@@ -1,8 +1,23 @@
 # MyBatis Utility
 
-![MyBatis Utility overview](docs/screenshots/snapshot.png)
+![MyBatis Utility overview](docs/howtouse.gif)
 
 VSCode extension for MyBatis developers. Browse Mapper files, fill query parameters, and execute SQL against configured databases — all without leaving the editor.
+
+## Quick Start
+
+| Step | Where | What to do |
+|------|-------|------------|
+| 1 | **Databases** panel → **+** | Add a database connection (SQLite path, or PostgreSQL/MySQL host + credentials). Passwords are stored in Secret Storage. |
+| 2 | **Mappers** panel title bar → ⊕ | Add a scan folder pattern if the default (`**/mapper`, `**/repository`) doesn't match your project — or skip, the defaults work for most Spring Boot projects. |
+| 3 | **Mappers** panel | Click any query to open the **Query** panel. |
+| 4 | **Query** panel | Select a database, fill in `#{param}` values (type: string / number / boolean / date / null), then press **Ctrl+Enter** or click **execute(all)**. |
+| 5 | *(optional)* **Query** panel | Click **Preview SQL** to see the final SQL with all parameters substituted, before executing. |
+| 6 | *(optional)* **Query** panel | Click **Explain** to run `EXPLAIN` and inspect the query plan. |
+| 7 | *(optional)* **Query** panel | Click **reset SQL** to revert any inline edits back to the original mapper SQL. |
+| 8 | **Dataset** panel | Click a CSV/XLSX fixture file → enter target table name → **Preview** → **Load** to bulk-reload a dev/test table. |
+
+See [Getting Started](#getting-started) below for detailed instructions on each step.
 
 ## Features
 
