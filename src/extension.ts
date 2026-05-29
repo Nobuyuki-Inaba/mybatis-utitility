@@ -6,6 +6,8 @@ import { DatabaseProvider, ConnectionItem } from './databaseProvider';
 import { ConfigPanel } from './configPanel';
 import { setExtensionPath } from './extensionContext';
 import { NewDbConnectionConfig, DbType } from './types';
+import { MapperPreviewProvider, mapperPreviewProvider } from './queryPanel';
+import { SqlFileProvider } from './sqlFileProvider';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   setExtensionPath(context.extensionPath);
@@ -24,6 +26,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const mapperViewMode = context.globalState.get<'flat' | 'tree'>('mybatisUtility.mapperViewMode', 'flat');
   const datasetViewMode = context.globalState.get<'flat' | 'tree'>('mybatisUtility.datasetViewMode', 'flat');
 
+  // --- Write-back diff preview provider ---
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(
+      MapperPreviewProvider.SCHEME,
+      mapperPreviewProvider
+    )
+  );
+
   // --- Mapper webview panel ---
   const mapperProvider = new MapperWebviewProvider(context.extensionUri, configMgr);
   mapperProvider.setDisplayMode(mapperViewMode);
@@ -38,6 +48,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   await vscode.commands.executeCommand('setContext', 'mybatisUtility.datasetViewMode', datasetViewMode);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(DatasetWebviewProvider.viewType, datasetProvider)
+  );
+
+  // --- SQL Files panel ---
+  const sqlViewMode = context.globalState.get<'flat' | 'tree'>('mybatisUtility.sqlViewMode', 'flat');
+  const sqlProvider = new SqlFileProvider(context.extensionUri, configMgr);
+  sqlProvider.setDisplayMode(sqlViewMode);
+  await vscode.commands.executeCommand('setContext', 'mybatisUtility.sqlViewMode', sqlViewMode);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(SqlFileProvider.viewType, sqlProvider)
   );
 
   const dbProvider = new DatabaseProvider(configMgr);
@@ -147,6 +166,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mybatisUtility.refreshSqlFiles', () => {
+      sqlProvider.refresh();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mybatisUtility.addSqlExclude', async () => {
+      await addExcludePattern('sqlExclude', 'SQL Files', sqlProvider.refresh.bind(sqlProvider));
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mybatisUtility.setSqlFlatView', () => {
+      sqlProvider.setDisplayMode('flat');
+      void vscode.commands.executeCommand('setContext', 'mybatisUtility.sqlViewMode', 'flat');
+      void context.globalState.update('mybatisUtility.sqlViewMode', 'flat');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('mybatisUtility.setSqlTreeView', () => {
+      sqlProvider.setDisplayMode('tree');
+      void vscode.commands.executeCommand('setContext', 'mybatisUtility.sqlViewMode', 'tree');
+      void context.globalState.update('mybatisUtility.sqlViewMode', 'tree');
+    })
+  );
+
   // Re-scan when relevant settings change
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(e => {
@@ -158,6 +205,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           e.affectsConfiguration('mybatisUtility.datasetExclude')) {
         datasetProvider.refresh();
       }
+      if (e.affectsConfiguration('mybatisUtility.sqlExclude')) {
+        sqlProvider.refresh();
+      }
     })
   );
 
@@ -167,6 +217,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   watcher.onDidChange(() => mapperProvider.refresh());
   watcher.onDidDelete(() => mapperProvider.refresh());
   context.subscriptions.push(watcher);
+
+  // Auto-refresh SQL Files panel on .sql file changes
+  const sqlWatcher = vscode.workspace.createFileSystemWatcher('**/*.sql');
+  sqlWatcher.onDidCreate(() => sqlProvider.refresh());
+  sqlWatcher.onDidDelete(() => sqlProvider.refresh());
+  context.subscriptions.push(sqlWatcher);
 }
 
 // ---------------------------------------------------------------------------

@@ -22,6 +22,7 @@ let currentQuery: ParsedQuery | null = null;
 let paramEntries: ParamEntry[] = [];
 let connections: DbConnectionConfig[] = [];
 let selectedConnectionId = '';
+let canWriteBack = false;
 
 let presets: ParamPreset[] = [];
 let selectedPresetName = '';
@@ -68,7 +69,10 @@ function renderConnectionPicker(): void {
 function getDisplayedParamNames(): Set<string> {
   const sql = el<HTMLElement>('query-display')?.textContent ?? '';
   const names = new Set<string>();
-  for (const m of sql.matchAll(/#\{(\w+)\}/g)) { names.add(m[1]); }
+  // Handle #{name} and #{name,jdbcType=VARCHAR} — same logic as backend extractPlaceholders
+  for (const m of sql.matchAll(/[#$]\{([^}]+)\}/g)) {
+    names.add(m[1].split(',')[0].trim());
+  }
   return names;
 }
 
@@ -131,6 +135,12 @@ function renderParamTable(): void {
 function renderQuery(query: ParsedQuery): void {
   el('query-display').innerHTML = hljs.highlight(query.sql, { language: 'sql' }).value;
   el('mapper-label').textContent = query.id;
+}
+
+function updateWriteBackButtons(): void {
+  const enabled = !!currentQuery && canWriteBack;
+  el<HTMLButtonElement>('btn-preview-write-back').disabled = !enabled;
+  el<HTMLButtonElement>('btn-write-back').disabled = !enabled;
 }
 
 function renderResult(result: QueryResult): void {
@@ -302,6 +312,7 @@ window.addEventListener('message', (event: MessageEvent<ExtToWebMsg>) => {
   switch (msg.type) {
     case 'setQuery':
       currentQuery = msg.query;
+      canWriteBack = msg.canWriteBack;
       paramEntries = msg.query.params.map((name: string) => ({ name, value: '', type: 'string' as ParamType }));
       presets = [];
       selectedPresetName = '';
@@ -313,6 +324,7 @@ window.addEventListener('message', (event: MessageEvent<ExtToWebMsg>) => {
       renderResultPlaceholder();
       renderQuery(msg.query);
       render();
+      updateWriteBackButtons();
       break;
 
     case 'presets':
@@ -380,11 +392,30 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   el('btn-reset').addEventListener('click', () => {
-    if (currentQuery) { renderQuery(currentQuery); }
-    renderParamTable();
+    if (!currentQuery) { return; }
+    // Always re-read from disk — picks up any external edits to XML, Java, or SQL files
+    vscode.postMessage({ type: 'reloadSql' });
+  });
+
+  el('btn-preview-write-back').addEventListener('click', () => {
+    const sql = (el('query-display') as HTMLElement).textContent ?? '';
+    vscode.postMessage({ type: 'previewWriteBack', sql });
+  });
+
+  el('btn-write-back').addEventListener('click', () => {
+    const sql = (el('query-display') as HTMLElement).textContent ?? '';
+    vscode.postMessage({ type: 'saveSql', sql });
   });
 
   el('query-display').addEventListener('input', () => {
+    // Auto-add parameter rows for any new #{placeholder} found in the edited SQL
+    const displayedNames = getDisplayedParamNames();
+    const existingNames = new Set(paramEntries.map(p => p.name));
+    for (const name of displayedNames) {
+      if (!existingNames.has(name)) {
+        paramEntries.push({ name, value: '', type: 'string' });
+      }
+    }
     renderParamTable();
   });
 
@@ -436,9 +467,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
   domReady = true;
   renderResultPlaceholder();
+  updateWriteBackButtons();
   if (pendingSetQuery) {
+    canWriteBack = pendingSetQuery.canWriteBack;
     renderQuery(pendingSetQuery.query);
     render();
+    updateWriteBackButtons();
     pendingSetQuery = null;
   }
 });
@@ -466,6 +500,7 @@ function buildLayout(): string {
   body { font-family: var(--font); font-size: var(--font-size); background: var(--bg); color: var(--fg); padding: 12px; max-width: 100vw; overflow-x: hidden; }
 
   .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .toolbar-sep { width: 1px; height: 18px; background: var(--border); margin: 0 2px; flex-shrink: 0; }
   button {
     background: var(--btn-bg); color: var(--btn-fg); border: none; padding: 4px 12px;
     cursor: pointer; font-size: var(--font-size); border-radius: 2px;
@@ -563,6 +598,9 @@ function buildLayout(): string {
   <button id="btn-exec-explain" class="btn-secondary">Explain</button>
   <button id="btn-preview-sql" class="btn-secondary">Preview SQL</button>
   <button id="btn-reset" class="btn-secondary">reset SQL</button>
+  <span class="toolbar-sep"></span>
+  <button id="btn-preview-write-back" class="btn-secondary" disabled>Preview write-back</button>
+  <button id="btn-write-back" class="btn-secondary" disabled>Write back to mapper</button>
   <select id="conn-select" style="min-width:220px"><option value="">-- select database --</option></select>
 </div>
 

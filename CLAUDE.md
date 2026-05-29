@@ -35,10 +35,12 @@ src/
   mapperWebviewProvider.ts  # WebviewViewProvider — Mappers panel; _scan() iterates workspaceFolders with per-folder config (scanFolders + scanExclude)
   mapperProvider.ts         # TreeDataProvider helpers (FolderItem, MapperFileItem, MapperQueryItem)
   mapperScanner.ts          # pure parsing logic; isProviderMapper() skips @SelectProvider/@InsertProvider etc. files
-  scanUtils.ts              # pure helpers: makeGlob(), buildExcludeGlob(), MAPPER_DEFAULT_EXCLUDE, DATASET_DEFAULT_EXCLUDE
+  scanUtils.ts              # pure helpers: makeGlob(), buildExcludeGlob(), MAPPER_DEFAULT_EXCLUDE, DATASET_DEFAULT_EXCLUDE, SQL_DEFAULT_EXCLUDE
   sheetReader.ts            # SheetReader interface + CsvReader + XlsxReader + getSheetReader() registry; registerSheetReader() for new formats
-  queryParser.ts            # extract #{} placeholders, buildExecutableSql(), formatValue()
-  queryPanel.ts             # WebviewPanel for query execution (singleton); handles execute/explain/preview
+  queryParser.ts            # extract #{} placeholders, buildExecutableSql(), formatValue(), detectSqlKind()
+  mapperWriter.ts           # write SQL back to mapper files: updateXmlMapperSql(), updateJavaAnnotationSql()
+  sqlFileProvider.ts        # WebviewViewProvider — SQL Files panel; scans **/*.sql via workspace.findFiles
+  queryPanel.ts             # WebviewPanel for query execution (singleton); handles execute/explain/preview/write-back/reload
   configPanel.ts            # WebviewPanel for DB connection management (singleton)
   databaseProvider.ts       # TreeDataProvider for the Databases sidebar view
   dbManager.ts              # driver registry — registerDriver(type, driver); also bulkLoad()
@@ -47,7 +49,7 @@ src/
   datasetLoaderPanel.ts     # WebviewPanel for bulk-loading; _sendInit() reads XLSX sheet names via getSheetReader().listSheets() before sending init to webview
   datasetLoader.ts          # readSheetData() delegates to getSheetReader(); loadSheetToDb() via dbManager.bulkLoad()
   datasetScanner.ts         # scanDatasetFiles(FolderScanConfig[]) — per-folder include+exclude; xlsx sheet names deferred to DatasetLoaderPanel
-  queryParser.ts            # JAVA_ANNOTATION_RE supports single-quoted strings AND Java 15+ text blocks ("""); parseJavaMapperMethods() handles @Mapper interfaces with no inline SQL
+  queryParser.ts            # JAVA_ANNOTATION_RE supports single-quoted strings AND Java 15+ text blocks ("""); parseJavaMapperMethods() handles @Mapper interfaces with no inline SQL; detectSqlKind() infers QueryKind from first DML keyword
   drivers/
     sqlite.ts               # sql.js (pure WASM, no native build required); implements bulkLoad
     postgresql.ts           # pg (pure JS); implements bulkLoad
@@ -59,6 +61,7 @@ media/src/
   mapperPanel.ts            # webview script for Mappers panel (filter, flat/tree render)
   datasetPanel.ts           # webview script for Dataset panel (filter input, flat/tree render, lists CSV/XLSX files)
   datasetLoaderPanel.ts     # webview script for Dataset Loader (preview table, sheet→table mapping)
+  sqlFilePanel.ts           # webview script for SQL Files panel (filter input, flat/tree render, lists .sql files)
 
 test/
   queryParser.test.ts       # unit tests for queryParser.ts — not included in VSIX
@@ -128,8 +131,11 @@ No other changes needed — `readSheetData()`, `DatasetLoaderPanel`, and `getShe
 ### Webview message protocol
 
 Query/Config panels (`src/types.ts`):
-- `ExtToWebMsg` — extension → webview (setQuery, queryResult, queryError, connections, connectionSaved, connectionDeleted, **settings**)
-- `WebToExtMsg` — extension ← webview (execute `{mode:'all'|'range'|'explain'}`, getConnections, saveConnection, deleteConnection)
+- `ExtToWebMsg` — extension → webview (setQuery `{query, mapperLabel, canWriteBack, mapperSource}`, queryResult, queryError, connections, connectionSaved, connectionDeleted, **settings**)
+- `WebToExtMsg` — extension ← webview (execute `{mode:'all'|'range'|'explain'}`, getConnections, saveConnection, deleteConnection, **saveSql**, **previewWriteBack**, **reloadSql**)
+- **`reloadSql`**: re-reads the source file from disk and sends a fresh `setQuery`. Used by "reset SQL" button for all source types (XML, Java, SQL file)
+- **`saveSql`**: writes edited SQL back to the mapper file (XML body or Java annotation). Not sent for `source:'sql'` files (`canWriteBack=false`)
+- **`previewWriteBack`**: computes updated file content and opens a diff view via `MapperPreviewProvider` (`mybatis-preview:` scheme registered in `extension.ts`)
 
 Mapper panel (ad-hoc, not in types.ts):
 - Extension → webview: `{ type: 'setLoading', loading: boolean }`, `{ type: 'setMappers', items: MapperFile[], hasFolders: boolean }`, `{ type: 'setDisplayMode', mode }`
@@ -139,6 +145,12 @@ Dataset panel (`DatasetToWebMsg` / `WebToDatasetMsg` in `types.ts`):
 - Extension → webview: `{ type: 'setLoading', loading: boolean }`, `{ type: 'setFiles', items: DatasetFile[] }`, `{ type: 'setDisplayMode', mode }`
 - Webview → extension: **`{ type: 'ready' }`** (on DOMContentLoaded), `{ type: 'openLoader', file }`, `{ type: 'refresh' }`
 
+SQL Files panel (`SqlToWebMsg` / `WebToSqlMsg` in `types.ts`):
+- Extension → webview: `{ type: 'setLoading', loading: boolean }`, `{ type: 'setFiles', items: SqlFile[], hasFolders: boolean }`, `{ type: 'setDisplayMode', mode }`
+- Webview → extension: **`{ type: 'ready' }`** (on DOMContentLoaded), `{ type: 'openFile', path: string }`, `{ type: 'refresh' }`
+- On `openFile`: provider reads the file, creates a synthetic `ParsedQuery` + `MapperFile` with `source:'sql'`, calls `QueryPanel.show()`
+- `canWriteBack` is always `false` for `source:'sql'`; the user edits `.sql` files directly with VSCode's built-in editor and reloads via **reset SQL**
+
 Dataset loader panel (`LoaderExtToWebMsg` / `LoaderWebToExtMsg` in `types.ts`):
 - Extension → webview: `init` (file with populated `sheets` array), `preview { sheet, columns, rows }`, `loadResult { success, message }`
 - Webview → extension: `getPreview { sheet }`, `load { connectionId, mappings }`
@@ -146,10 +158,13 @@ Dataset loader panel (`LoaderExtToWebMsg` / `LoaderWebToExtMsg` in `types.ts`):
 
 ### SQL execution flow
 
-1. User clicks query in Mappers panel → webview posts `openQuery` → `QueryPanel.show()`
-2. User clicks execute → webview posts `execute` with `displayedSql` (editable div content) and `mode` (`'all'` | `'range'` | `'explain'`)
-3. Extension reads `fetchLimit` from settings, calls `buildExecutableSql()` → `executeQuery()` or `explainQuery()`
-4. Result posted back as `queryResult` → webview paginates display
+1. User clicks query in Mappers panel (or SQL file in SQL Files panel) → `QueryPanel.show()` called
+2. Extension sends `setQuery` with `{ query, mapperLabel, canWriteBack, mapperSource }`; webview stores `currentQuery`
+3. User edits SQL — new `#{param}` placeholders detected via `getDisplayedParamNames()` and auto-appended to `paramEntries`
+4. User clicks execute → webview posts `execute` with `displayedSql` (editable div content) and `mode` (`'all'` | `'range'` | `'explain'`)
+5. Extension reads `fetchLimit` from settings, calls `buildExecutableSql()` → `executeQuery()` or `explainQuery()`
+6. Result posted back as `queryResult` → webview paginates display
+7. **reset SQL**: webview posts `reloadSql` → extension calls `_reloadFromFile()` which re-parses the source file and sends fresh `setQuery`
 
 **Live SQL preview** is entirely client-side: the webview's `buildPreviewSql()` substitutes parameters using `_formatPreviewValue()` and renders the result as `<pre>`. No round-trip to the extension.
 
@@ -174,8 +189,8 @@ Tag `v*` on main triggers `.github/workflows/release.yml`:
 - Creates GitHub Release with the VSIX as attachment and auto-generated release notes
 
 ```powershell
-git tag v0.4.0
-git push origin v0.4.0
+git tag v0.5.0
+git push origin v0.5.0
 ```
 
 To publish to VS Code Marketplace:
@@ -183,3 +198,9 @@ To publish to VS Code Marketplace:
 npx vsce publish
 ```
 (requires `VSCE_PAT` personal access token)
+
+### Pre-release checklist
+
+- **Animated demo**: the README embeds `docs/howtouse.gif`. Update this GIF when the UI changes significantly. There is no static screenshot (`docs/screenshots/snapshot.png` is excluded from the VSIX and no longer referenced).
+- Run `npx vsce ls` to verify the VSIX contents — `docs/screenshots/` and other dev-only assets must not appear.
+- Run `npm run build && npm run package` and confirm the `.vsix` is produced without errors.

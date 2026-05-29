@@ -19,6 +19,12 @@ export const DATASET_DEFAULT_EXCLUDE = [
   '**/out/**', '.git/**', '**/.gradle/**',
 ] as const;
 
+/** Default exclude patterns for SQL Files scanning. */
+export const SQL_DEFAULT_EXCLUDE = [
+  '**/node_modules/**', '**/target/**', '**/build/**', '**/dist/**',
+  '**/out/**', '.git/**', '**/.gradle/**',
+] as const;
+
 // ---------------------------------------------------------------------------
 // makeGlob
 // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
   "name": "mybatis-utility",
   "displayName": "MyBatis Utility",
   "description": "MyBatis query executor — browse Mapper files, fill placeholders, run queries against configured databases",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "publisher": "nobuyuki-inaba",
   "license": "MIT",
   "repository": {
@@ -45,6 +45,11 @@
         {
           "id": "mybatisUtility.datasetView",
           "name": "Dataset",
+          "type": "webview"
+        },
+        {
+          "id": "mybatisUtility.sqlView",
+          "name": "SQL Files",
           "type": "webview"
         },
         {
@@ -122,6 +127,26 @@
         "command": "mybatisUtility.addDatasetExclude",
         "title": "Add Dataset Exclude Pattern",
         "icon": "$(filter)"
+      },
+      {
+        "command": "mybatisUtility.refreshSqlFiles",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mybatisUtility.addSqlExclude",
+        "title": "Add SQL Files Exclude Pattern",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "mybatisUtility.setSqlFlatView",
+        "title": "Switch to Flat View",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "mybatisUtility.setSqlTreeView",
+        "title": "Switch to Hierarchical View",
+        "icon": "$(list-tree)"
       }
     ],
     "menus": {
@@ -179,6 +204,26 @@
         {
           "command": "mybatisUtility.setDatasetFlatView",
           "when": "view == mybatisUtility.datasetView && mybatisUtility.datasetViewMode == 'tree'",
+          "group": "navigation@3"
+        },
+        {
+          "command": "mybatisUtility.refreshSqlFiles",
+          "when": "view == mybatisUtility.sqlView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mybatisUtility.addSqlExclude",
+          "when": "view == mybatisUtility.sqlView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mybatisUtility.setSqlTreeView",
+          "when": "view == mybatisUtility.sqlView && mybatisUtility.sqlViewMode == 'flat'",
+          "group": "navigation@3"
+        },
+        {
+          "command": "mybatisUtility.setSqlFlatView",
+          "when": "view == mybatisUtility.sqlView && mybatisUtility.sqlViewMode == 'tree'",
           "group": "navigation@3"
         },
         {
@@ -263,13 +308,22 @@
           "default": [],
           "scope": "resource",
           "markdownDescription": "Additional glob patterns to exclude from Dataset scanning (takes priority over `datasetDirectories`).\n\nExample: `[\"**/archived/**\"]`"
+        },
+        "mybatisUtility.sqlExclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "Additional glob patterns to exclude from SQL Files scanning. `node_modules`, `target`, `build`, `dist`, `out`, and `.git` are always excluded.\n\nExample: `[\"**/generated/**\", \"**/legacy/**\"]`"
         }
       }
     }
   },
   "scripts": {
     "build:ext": "esbuild src/extension.ts --bundle --outfile=out/extension.js --format=cjs --platform=node --external:vscode --external:sql.js --target=node20 --legal-comments=inline",
-    "build:webview": "esbuild media/src/queryPanel.ts --bundle --outfile=media/queryPanel.js --format=iife --target=es2020 && esbuild media/src/configPanel.ts --bundle --outfile=media/configPanel.js --format=iife --target=es2020 && esbuild media/src/mapperPanel.ts --bundle --outfile=media/mapperPanel.js --format=iife --target=es2020 && esbuild media/src/datasetPanel.ts --bundle --outfile=media/datasetPanel.js --format=iife --target=es2020 && esbuild media/src/datasetLoaderPanel.ts --bundle --outfile=media/datasetLoaderPanel.js --format=iife --target=es2020",
+    "build:webview": "esbuild media/src/queryPanel.ts --bundle --outfile=media/queryPanel.js --format=iife --target=es2020 && esbuild media/src/configPanel.ts --bundle --outfile=media/configPanel.js --format=iife --target=es2020 && esbuild media/src/mapperPanel.ts --bundle --outfile=media/mapperPanel.js --format=iife --target=es2020 && esbuild media/src/datasetPanel.ts --bundle --outfile=media/datasetPanel.js --format=iife --target=es2020 && esbuild media/src/datasetLoaderPanel.ts --bundle --outfile=media/datasetLoaderPanel.js --format=iife --target=es2020 && esbuild media/src/sqlFilePanel.ts --bundle --outfile=media/sqlFilePanel.js --format=iife --target=es2020",
     "build": "npm run compile",
     "compile": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.webview.json --noEmit && npm run build:ext && npm run build:webview",
     "watch": "npm run build:ext -- --watch & npm run build:webview -- --watch",

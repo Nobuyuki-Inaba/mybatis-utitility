@@ -12,17 +12,23 @@ VSCode extension for MyBatis developers. Browse Mapper files, fill query paramet
 | 2 | **Mappers** panel title bar → ⊕ | Add a scan folder pattern if the default (`**/mapper`, `**/repository`) doesn't match your project — or skip, the defaults work for most Spring Boot projects. |
 | 3 | **Mappers** panel | Click any query to open the **Query** panel. |
 | 4 | **Query** panel | Select a database, fill in `#{param}` values (type: string / number / boolean / date / null), then press **Ctrl+Enter** or click **execute(all)**. |
-| 5 | *(optional)* **Query** panel | Click **Preview SQL** to see the final SQL with all parameters substituted, before executing. |
-| 6 | *(optional)* **Query** panel | Click **Explain** to run `EXPLAIN` and inspect the query plan. |
-| 7 | *(optional)* **Query** panel | Click **reset SQL** to revert any inline edits back to the original mapper SQL. |
-| 8 | **Dataset** panel | Click a CSV/XLSX fixture file → enter target table name → **Preview** → **Load** to bulk-reload a dev/test table. |
+| 5 | *(optional)* **Query** panel | Edit SQL inline — new `#{param}` placeholders are added to the parameter table automatically. |
+| 6 | *(optional)* **Query** panel | Click **Preview SQL** to see the final SQL with all parameters substituted, before executing. |
+| 7 | *(optional)* **Query** panel | Click **Explain** to run `EXPLAIN` and inspect the query plan. |
+| 8 | *(optional)* **Query** panel | Click **Preview write-back** to diff the edited SQL against the mapper file, then **Write back to mapper** to save it. |
+| 9 | *(optional)* **Query** panel | Click **reset SQL** to re-read the source file from disk and discard any inline edits. |
+| 10 | **SQL Files** panel | Click any `.sql` file in the workspace to open it in the Query panel and execute it against a configured database. |
+| 11 | **Dataset** panel | Click a CSV/XLSX fixture file → enter target table name → **Preview** → **Load** to bulk-reload a dev/test table. |
 
 See [Getting Started](#getting-started) below for detailed instructions on each step.
 
 ## Features
 
 - **Mapper panel** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type. Supports inline SQL annotations (including Java 15+ **text blocks** `"""..."""`) and XML-mapped interfaces. Results stream in folder-by-folder so the panel populates progressively on large projects. Scan results are cached — switching to another panel and back reuses the result instantly without rescanning. MyBatis Generator `@SelectProvider` / `@InsertProvider` etc. are automatically skipped (no inline SQL to browse)
-- **Query panel** — Click a query to open it, edit SQL inline with **syntax highlighting**, fill typed parameters (`#{param}`), and execute
+- **SQL Files panel** — New panel that lists every `.sql` file in the workspace. Click any file to open it in the Query panel and execute against a configured database. Panel refreshes automatically when `.sql` files are created or deleted
+- **Query panel** — Click a query to open it, edit SQL inline with **syntax highlighting**, fill typed parameters (`#{param}`), and execute. New `#{param}` placeholders added during editing are detected automatically and appended to the parameter table
+- **Write SQL back to mapper** — Click **Preview write-back** to open a diff view (original file vs edited SQL); click **Write back to mapper** to save directly. Supports XML mapper bodies and Java `@Select`/`@Insert`/`@Update`/`@Delete` annotations (single-line and text blocks). Disabled for SQL files (edit them in the built-in editor instead)
+- **reset SQL reloads from disk** — **reset SQL** re-reads the source file (XML, Java, or `.sql`) so external edits made with other tools are always visible without manually refreshing
 - **Live SQL preview** — Click **Preview SQL** to see the final SQL with all parameters substituted inline, before executing
 - **Explain plan** — Click **Explain** to run `EXPLAIN` on the current SQL and inspect the query plan
 - **Dataset loader** — **Dataset** panel scans for CSV / XLSX fixture files in your workspace. Filter files in real time with the search input, switch between flat and hierarchical views, click any file to open the loader, preview data, map sheets to database tables, and bulk-load with one click (clears and reloads the target table). XLSX sheet names are read automatically when the loader opens
@@ -105,7 +111,21 @@ To save the current parameter values as a preset, type a name in the **Preset na
 
 Presets are saved to `.vscode/mybatis-utility/params.yaml` in your workspace. Add the file to `.gitignore` to keep values local, or commit it to share with your team.
 
-### 4. Load test data (Dataset panel)
+### 4. Execute SQL files (SQL Files panel)
+
+The **SQL Files** panel lists every `.sql` file found in the workspace (excluding `node_modules`, `target`, `build`, etc.). No configuration is needed — it scans the entire workspace automatically.
+
+1. Click any `.sql` file to open it in the **Query** panel
+2. Select a database connection and fill in any `#{param}` values
+3. Press **Ctrl+Enter** to execute
+
+`#{param}` placeholders in the file are extracted automatically and shown in the parameter table.
+
+Use the **`$(filter)`** button in the panel title bar to add exclude patterns if you want to hide generated or legacy SQL files. Use the **`$(refresh)`** button to re-scan after adding new files.
+
+> **reset SQL** for a SQL file re-reads the file from disk — useful if you edited the file externally and want the query panel to reflect the changes.
+
+### 5. Load test data (Dataset panel)
 
 The **Dataset** panel (in the sidebar) automatically scans for CSV and XLSX fixture files in common locations (`fixtures/`, `testdata/`, `dataset/`, `src/test/resources/`, etc.). Use the **`$(new-folder)`** and **`$(filter)`** buttons in the Dataset panel title bar to add include / exclude patterns interactively. Use the filter input at the top to narrow results in real time, and use the list/tree icon in the title bar to switch between flat and hierarchical views. Both view preferences are saved across sessions.
 
@@ -138,6 +158,7 @@ All settings support per-folder configuration in multi-root workspaces (scope: `
 | `mybatisUtility.pageSize` | `200` | Rows displayed per page in the result panel. |
 | `mybatisUtility.datasetDirectories` | `["**/fixture/**", "**/fixtures/**", ...]` | Glob patterns for fixture files shown in the Dataset panel. Use the `$(new-folder)` button to add patterns interactively. |
 | `mybatisUtility.datasetExclude` | `[]` | Additional glob patterns to exclude from dataset scanning. Takes priority over `datasetDirectories`. `node_modules`, `target`, `build`, `dist`, `out`, `.gradle` are always excluded. |
+| `mybatisUtility.sqlExclude` | `[]` | Additional glob patterns to exclude from SQL Files scanning. `node_modules`, `target`, `build`, `dist`, `out`, `.gradle`, `.git` are always excluded. Use the `$(filter)` button in the SQL Files panel to add patterns interactively. |
 
 Open settings with the **gear icon** (⚙) in the Mappers panel title bar.
 
@@ -189,7 +210,8 @@ Both `#{param}` and `${param}` placeholders are detected and shown in the parame
 
 - **No transaction** — queries run outside a transaction. There is no rollback. Be careful with INSERT / UPDATE / DELETE.
 - **fetchLimit warning** — if results are truncated, a warning is shown. Add `LIMIT` to your SQL or increase `fetchLimit` in settings.
-- The SQL panel is editable — changes affect execution but not the source file. Use **reset SQL** to restore the original.
+- The SQL panel is editable — changes affect execution only. Use **reset SQL** to re-read the source file from disk, or **Write back to mapper** to persist edits (XML/Java mappers only).
+- **SQL Files panel** — all `.sql` files in the workspace are listed. Write-back is disabled for `.sql` files; edit them directly with VSCode's built-in editor and press **reset SQL** to reload.
 
 ## License
 

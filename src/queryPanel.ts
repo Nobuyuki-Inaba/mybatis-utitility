@@ -1,16 +1,46 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ConfigManager } from './configManager';
 import { executeQuery, explainQuery } from './dbManager';
-import { buildExecutableSql, defaultParamEntries } from './queryParser';
+import { buildExecutableSql, defaultParamEntries, extractPlaceholders, detectSqlKind,
+         parseXmlMapper, parseJavaMapper, parseJavaMapperMethods } from './queryParser';
+import { updateXmlMapperSql, updateJavaAnnotationSql } from './mapperWriter';
 import { ParsedQuery, MapperFile, ExtToWebMsg, WebToExtMsg } from './types';
 import { ParamPresetManager } from './paramPresetManager';
+
+// ---------------------------------------------------------------------------
+// TextDocumentContentProvider for diff-based write-back preview
+// ---------------------------------------------------------------------------
+
+export class MapperPreviewProvider implements vscode.TextDocumentContentProvider {
+  static readonly SCHEME = 'mybatis-preview';
+  private _contents = new Map<string, string>();
+  private _emitter = new vscode.EventEmitter<vscode.Uri>();
+  readonly onDidChange = this._emitter.event;
+
+  update(uri: vscode.Uri, content: string): void {
+    this._contents.set(uri.toString(), content);
+    this._emitter.fire(uri);
+  }
+
+  provideTextDocumentContent(uri: vscode.Uri): string {
+    return this._contents.get(uri.toString()) ?? '';
+  }
+}
+
+export const mapperPreviewProvider = new MapperPreviewProvider();
+
+// ---------------------------------------------------------------------------
+// QueryPanel
+// ---------------------------------------------------------------------------
 
 export class QueryPanel {
   private static _instance: QueryPanel | undefined;
   private readonly _panel: vscode.WebviewPanel;
   private _disposables: vscode.Disposable[] = [];
   private _currentQuery: ParsedQuery | undefined;
+  private _currentMapperFile: MapperFile | undefined;
   private _queryKey = '';
   private readonly _presetMgr = new ParamPresetManager();
 
@@ -74,13 +104,23 @@ export class QueryPanel {
 
   private _sendQuery(query: ParsedQuery, mapperFile: MapperFile): void {
     this._currentQuery = query;
+    this._currentMapperFile = mapperFile;
     this._panel.title = `Query: ${query.id}`;
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
     this._queryKey = `${path.relative(root, mapperFile.filePath).replace(/\\/g, '/')}#${query.id}`;
+
+    // Write-back supported for XML always; Java only when inline SQL exists
+    // (method-stub entries have sql === '' and no annotation to overwrite).
+    // SQL files are read-only from the query panel — edit them directly in the editor.
+    const canWriteBack = mapperFile.source === 'xml' ||
+      (mapperFile.source === 'java' && query.sql !== '');
+
     const msg: ExtToWebMsg = {
       type: 'setQuery',
       query,
       mapperLabel: mapperFile.label,
+      canWriteBack,
+      mapperSource: mapperFile.source,
     };
     this._panel.webview.postMessage(msg);
     this._postPresets();
@@ -177,6 +217,101 @@ export class QueryPanel {
         this._presetMgr.deletePreset(this._queryKey, msg.presetName);
         this._postPresets();
         break;
+
+      case 'reloadSql':
+        this._reloadFromFile();
+        break;
+
+      case 'previewWriteBack':
+        await this._handlePreviewWriteBack(msg.sql);
+        break;
+
+      case 'saveSql':
+        await this._handleSaveSql(msg.sql);
+        break;
+    }
+  }
+
+  private _reloadFromFile(): void {
+    if (!this._currentMapperFile || !this._currentQuery) { return; }
+    const { filePath, source } = this._currentMapperFile;
+    const queryId = this._currentQuery.id;
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      let query: ParsedQuery | undefined;
+
+      if (source === 'sql') {
+        const sql = raw.trim();
+        query = { id: queryId, kind: detectSqlKind(sql), sql, params: extractPlaceholders(sql) };
+      } else if (source === 'xml') {
+        query = parseXmlMapper(raw).find(q => q.id === queryId);
+      } else {
+        // Java: try inline @Select/@Insert/… first, fall back to method stubs
+        query = parseJavaMapper(raw).find(q => q.id === queryId)
+             ?? parseJavaMapperMethods(raw).find(q => q.id === queryId);
+      }
+
+      if (!query) {
+        void vscode.window.showErrorMessage(
+          `Query "${queryId}" not found in ${path.basename(filePath)}`
+        );
+        return;
+      }
+
+      this._sendQuery(query, this._currentMapperFile);
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Failed to reload: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  private async _handlePreviewWriteBack(newSql: string): Promise<void> {
+    if (!this._currentQuery || !this._currentMapperFile) { return; }
+    const { filePath, source } = this._currentMapperFile;
+    const queryId = this._currentQuery.id;
+    try {
+      const originalContent = fs.readFileSync(filePath, 'utf-8');
+      const updatedContent =
+        source === 'xml' ? updateXmlMapperSql(originalContent, queryId, newSql) :
+                           updateJavaAnnotationSql(originalContent, queryId, newSql);
+
+      const basename = path.basename(filePath);
+      const previewUri = vscode.Uri.parse(
+        `${MapperPreviewProvider.SCHEME}:///preview/${encodeURIComponent(basename)}`
+      );
+      mapperPreviewProvider.update(previewUri, updatedContent);
+
+      await vscode.commands.executeCommand(
+        'vscode.diff',
+        vscode.Uri.file(filePath),
+        previewUri,
+        `Write-back preview: ${queryId} — ${basename}`
+      );
+    } catch (err) {
+      vscode.window.showErrorMessage(
+        `Preview failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  private async _handleSaveSql(newSql: string): Promise<void> {
+    if (!this._currentQuery || !this._currentMapperFile) { return; }
+    const { filePath, source } = this._currentMapperFile;
+    const queryId = this._currentQuery.id;
+    try {
+      const originalContent = fs.readFileSync(filePath, 'utf-8');
+      const updatedContent =
+        source === 'xml' ? updateXmlMapperSql(originalContent, queryId, newSql) :
+                           updateJavaAnnotationSql(originalContent, queryId, newSql);
+      fs.writeFileSync(filePath, updatedContent, 'utf-8');
+      void vscode.window.showInformationMessage(
+        `SQL written back to ${path.basename(filePath)}`
+      );
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Write-back failed: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
   }
 

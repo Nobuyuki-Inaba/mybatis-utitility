@@ -89,7 +89,7 @@ export interface ParsedQuery {
 }
 
 export interface MapperFile {
-  source: 'java' | 'xml';
+  source: 'java' | 'xml' | 'sql';
   filePath: string;
   label: string;       // class name or file basename
   queries: ParsedQuery[];
@@ -113,7 +113,7 @@ export interface QueryResult {
 
 // Extension → Webview
 export type ExtToWebMsg =
-  | { type: 'setQuery'; query: ParsedQuery; mapperLabel: string }
+  | { type: 'setQuery'; query: ParsedQuery; mapperLabel: string; canWriteBack: boolean; mapperSource: MapperFile['source'] }
   | { type: 'queryResult'; result: QueryResult }
   | { type: 'queryError'; message: string }
   | { type: 'connections'; items: DbConnectionConfig[] }
@@ -129,7 +129,32 @@ export type WebToExtMsg =
   | { type: 'saveConnection'; config: NewDbConnectionConfig; password?: string }
   | { type: 'deleteConnection'; id: string }
   | { type: 'savePreset'; presetName: string; params: ParamEntry[] }
-  | { type: 'deletePreset'; presetName: string };
+  | { type: 'deletePreset'; presetName: string }
+  | { type: 'saveSql'; sql: string }
+  | { type: 'previewWriteBack'; sql: string }
+  | { type: 'reloadSql' };
+
+// ---------------------------------------------------------------------------
+// SQL Files panel
+// ---------------------------------------------------------------------------
+
+export interface SqlFile {
+  path: string;     // full file system path
+  label: string;    // filename (e.g. "selectUsers.sql")
+  folder: string;   // relative directory path for tree-view grouping
+}
+
+// Extension → SQL Files sidebar webview
+export type SqlToWebMsg =
+  | { type: 'setFiles'; items: SqlFile[]; hasFolders: boolean }
+  | { type: 'setDisplayMode'; mode: 'flat' | 'tree' }
+  | { type: 'setLoading'; loading: boolean };
+
+// SQL Files sidebar webview → Extension
+export type WebToSqlMsg =
+  | { type: 'ready' }
+  | { type: 'openFile'; path: string }
+  | { type: 'refresh' };
 
 // ---------------------------------------------------------------------------
 // Dataset panel

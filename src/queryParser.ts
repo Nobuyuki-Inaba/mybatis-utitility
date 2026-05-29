@@ -206,3 +206,21 @@ function stripXmlComments(s: string): string {
 export function defaultParamEntries(query: ParsedQuery): ParamEntry[] {
   return query.params.map(name => ({ name, value: '', type: 'string' as ParamType }));
 }
+
+// ---------------------------------------------------------------------------
+// SQL file kind detection
+// ---------------------------------------------------------------------------
+
+/** Infer QueryKind from the first DML keyword in a SQL string. */
+export function detectSqlKind(sql: string): QueryKind {
+  const stripped = sql
+    .replace(/--[^\n]*/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .trimStart();
+  const first = (stripped.split(/[\s\n(]+/)[0] ?? '').toUpperCase();
+  if (first === 'SELECT' || first === 'WITH') { return 'select'; }
+  if (first === 'INSERT') { return 'insert'; }
+  if (first === 'UPDATE') { return 'update'; }
+  if (first === 'DELETE') { return 'delete'; }
+  return 'unknown';
+}
