@@ -1,6 +1,6 @@
 # MyBatis Utility
 
-![MyBatis Utility overview](docs/howtouse.gif)
+![MyBatis Utility overview](https://raw.githubusercontent.com/Nobuyuki-Inaba/mybatis-utility/main/docs/howtouse.gif)
 
 VSCode extension for MyBatis developers. Browse Mapper files, fill query parameters, and execute SQL against configured databases — all without leaving the editor.
 

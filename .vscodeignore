@@ -1,5 +1,5 @@
-# Docs — only the animated demo GIF is shipped; static screenshots are unused
-docs/screenshots/
+# Docs — images are served from GitHub raw URLs; no docs assets need to be shipped
+docs/
 
 # Development tooling
 .vscode/**

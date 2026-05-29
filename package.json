@@ -2,7 +2,7 @@
   "name": "mybatis-utility",
   "displayName": "MyBatis Utility",
   "description": "MyBatis query executor — browse Mapper files, fill placeholders, run queries against configured databases",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "nobuyuki-inaba",
   "license": "MIT",
   "repository": {
