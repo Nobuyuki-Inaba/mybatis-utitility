@@ -39,7 +39,7 @@ export function buildExecutableSql(sql: string, params: ParamEntry[]): string {
   });
 }
 
-function formatValue(entry: ParamEntry): string {
+export function formatValue(entry: ParamEntry): string {
   const { value, type } = entry;
 
   switch (type as ParamType) {
@@ -65,6 +65,97 @@ function formatValue(entry: ParamEntry): string {
 }
 
 // ---------------------------------------------------------------------------
+// Dynamic-SQL param extraction (test="…", collection="…", bind value="…")
+// ---------------------------------------------------------------------------
+
+const OGNL_KEYWORDS = new Set([
+  'null', 'true', 'false', 'and', 'or', 'not',
+  '_parameter', '_databaseId',
+]);
+
+/** Extract root-level param names referenced in an OGNL expression. */
+function extractOgnlIdents(expr: string): string[] {
+  // Strip string literals so we don't pick up words inside quotes
+  const stripped = expr.replace(/'[^']*'/g, '').replace(/"[^"]*"/g, '');
+  const result: string[] = [];
+  const seen = new Set<string>();
+  const re = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(stripped)) !== null) {
+    const ident = m[1];
+    if (OGNL_KEYWORDS.has(ident.toLowerCase())) { continue; }
+    // Skip property access: identifier immediately preceded by a dot
+    if (m.index > 0 && stripped[m.index - 1] === '.') { continue; }
+    if (!seen.has(ident)) { seen.add(ident); result.push(ident); }
+  }
+  return result;
+}
+
+/**
+ * Scan a SQL template for param names referenced only in dynamic-SQL
+ * attributes (test="…", collection="…", bind value="…") — these do NOT
+ * appear as #{placeholder} in the SQL body, so extractPlaceholders misses them.
+ */
+export function extractDynamicParams(sql: string): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  const add = (name: string) => { if (!seen.has(name)) { seen.add(name); result.push(name); } };
+
+  // test="…" in <if> / <when>
+  const testRe = /\btest\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  let m: RegExpExecArray | null;
+  while ((m = testRe.exec(sql)) !== null) {
+    for (const id of extractOgnlIdents(m[1] ?? m[2] ?? '')) { add(id); }
+  }
+
+  // collection="…" in <foreach>
+  const colRe = /\bcollection\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  while ((m = colRe.exec(sql)) !== null) {
+    const name = (m[1] ?? m[2] ?? '').trim();
+    if (name) { add(name); }
+  }
+
+  // value="…" in <bind>
+  const bindRe = /<bind\b[^>]*\bvalue\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  while ((m = bindRe.exec(sql)) !== null) {
+    for (const id of extractOgnlIdents(m[1] ?? m[2] ?? '')) { add(id); }
+  }
+
+  return result;
+}
+
+/**
+ * Collect <foreach> loop-variable names (item="…" and index="…").
+ * These are NOT mapper params — they are substituted by the foreach expander
+ * and must be excluded from the params table.
+ */
+function extractForeachLoopVars(sql: string): Set<string> {
+  const vars = new Set<string>();
+  // Match <foreach ...> opening tag (attributes may contain quoted > via the alternation)
+  const tagRe = /<foreach\b((?:[^>"']|"[^"]*"|'[^']*')*?)>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = tagRe.exec(sql)) !== null) {
+    const attrs = m[1];
+    const itemM = /\bitem\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(attrs);
+    const idxM  = /\bindex\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(attrs);
+    if (itemM) { const v = itemM[1] ?? itemM[2]; if (v) vars.add(v); }
+    if (idxM)  { const v = idxM[1]  ?? idxM[2];  if (v) vars.add(v); }
+  }
+  return vars;
+}
+
+/** All param names: #{} placeholders first, then OGNL-only refs (deduped, loop vars excluded). */
+function extractAllParams(sql: string): string[] {
+  const loopVars = extractForeachLoopVars(sql);
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const name of [...extractPlaceholders(sql), ...extractDynamicParams(sql)]) {
+    if (!loopVars.has(name) && !seen.has(name)) { seen.add(name); result.push(name); }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Java mapper parser
 // ---------------------------------------------------------------------------
 
@@ -85,7 +176,10 @@ export function parseJavaMapper(content: string): ParsedQuery[] {
     const kind = match[1].toLowerCase() as QueryKind;
     // match[2] = text block content (Java 15+), match[3] = quoted string, match[4] = backtick
     const raw = match[2] ?? match[3] ?? match[4];
-    const sql = raw.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\\\/g, '\\').trim();
+    let sql = raw.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\\\/g, '\\').trim();
+    // Strip <script> wrapper used for dynamic SQL in Java annotations
+    const scriptMatch = /^<script>([\s\S]*)<\/script>$/i.exec(sql);
+    if (scriptMatch) sql = scriptMatch[1].trim();
 
     // Find the method name that follows the annotation
     const afterAnnotation = content.slice(match.index + match[0].length);
@@ -93,7 +187,7 @@ export function parseJavaMapper(content: string): ParsedQuery[] {
     const mMethod = JAVA_METHOD_RE.exec(afterAnnotation);
     const id = mMethod ? mMethod[1] : `query_${results.length + 1}`;
 
-    results.push({ id, kind, sql, params: extractPlaceholders(sql) });
+    results.push({ id, kind, sql, params: extractAllParams(sql) });
   }
 
   return results;
@@ -189,7 +283,7 @@ export function parseXmlMapper(content: string): ParsedQuery[] {
     const kind = match[1].toLowerCase() as QueryKind;
     const id = match[2];
     const sql = stripXmlComments(match[3]).trim();
-    results.push({ id, kind, sql, params: extractPlaceholders(sql) });
+    results.push({ id, kind, sql, params: extractAllParams(sql) });
   }
 
   return results;

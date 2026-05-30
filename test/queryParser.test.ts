@@ -3,6 +3,7 @@ import {
   parseJavaMapperMethods,
   parseXmlMapper,
   extractPlaceholders,
+  extractDynamicParams,
   buildExecutableSql,
 } from '../src/queryParser';
 
@@ -29,6 +30,86 @@ describe('extractPlaceholders', () => {
 
   test('empty sql returns empty array', () => {
     expect(extractPlaceholders('')).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractDynamicParams
+// ---------------------------------------------------------------------------
+
+describe('extractDynamicParams', () => {
+  test('extracts ident from test attribute', () => {
+    expect(extractDynamicParams('<if test="title != null">x</if>')).toEqual(['title']);
+  });
+
+  test('extracts multiple idents from compound test', () => {
+    const sql = '<if test="a != null and b != null">x</if>';
+    expect(extractDynamicParams(sql)).toEqual(['a', 'b']);
+  });
+
+  test('extracts root ident from property path (ids.size())', () => {
+    expect(extractDynamicParams('<if test="ids.size() > 0">x</if>')).toEqual(['ids']);
+  });
+
+  test('extracts collection name from foreach', () => {
+    expect(extractDynamicParams('<foreach collection="ids" item="id">#{id}</foreach>')).toEqual(['ids']);
+  });
+
+  test('ignores OGNL keywords (null, true, false, and, or, not)', () => {
+    expect(extractDynamicParams('<if test="a != null and b == true">x</if>')).toEqual(['a', 'b']);
+  });
+
+  test('ignores special vars (_parameter, _databaseId)', () => {
+    expect(extractDynamicParams('<if test="_parameter != null">x</if>')).toEqual([]);
+  });
+
+  test('does not duplicate idents already found by extractPlaceholders', () => {
+    // params dedup is done by extractAllParams internally — just check extractDynamicParams itself
+    const sql = '<if test="id != null">AND id = #{id}</if>';
+    // id appears in both test attr and #{id}, but extractDynamicParams only looks at attrs
+    expect(extractDynamicParams(sql)).toEqual(['id']);
+  });
+
+  test('foreach loop variable (item/index) excluded from params', () => {
+    const content = `
+      <mapper namespace="com.example.Mapper">
+        <select id="selectByList" resultType="Sample">
+          select * from sample
+          <where>
+            <foreach item="item" index="index" collection="list"
+                open="id in (" separator="," close=")" nullable="true">
+              #{item}
+            </foreach>
+          </where>
+        </select>
+      </mapper>`;
+    const results = parseXmlMapper(content);
+    // 'list' (collection) must appear
+    expect(results[0].params).toContain('list');
+    // 'item' and 'index' are loop variables — must NOT appear
+    expect(results[0].params).not.toContain('item');
+    expect(results[0].params).not.toContain('index');
+  });
+
+  test('XML mapper with if tag shows title param', () => {
+    const content = `
+      <mapper namespace="com.example.Mapper">
+        <select id="selectByName" resultType="Sample">
+          select * from sample
+          where update_date = #{businessDate}
+          and name like #{name}
+          <if test="title != null">
+            and id = #{id}
+          </if>
+        </select>
+      </mapper>`;
+    const results = parseXmlMapper(content);
+    expect(results[0].params).toContain('title');
+    expect(results[0].params).toContain('businessDate');
+    expect(results[0].params).toContain('name');
+    expect(results[0].params).toContain('id');
+    // title comes after the #{} params
+    expect(results[0].params.indexOf('title')).toBeGreaterThan(results[0].params.indexOf('id'));
   });
 });
 

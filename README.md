@@ -24,6 +24,7 @@ See [Getting Started](#getting-started) below for detailed instructions on each 
 
 ## Features
 
+- **Dynamic SQL support** — MyBatis dynamic SQL tags (`<if>`, `<foreach>`, `<where>`, `<set>`, `<trim>`, `<choose>/<when>/<otherwise>`, `<bind>`, `<script>`) are evaluated at execute and preview time using the parameter values you provide. `test="…"` conditions use a built-in OGNL expression evaluator. Parameters referenced only in `test` attributes (e.g. `title` in `<if test="title != null">`) are automatically added to the parameter table. `<foreach>` loop variables (`item`, `index`) are excluded from the table — enter comma-separated values in the collection parameter instead
 - **Mapper panel** — Scans Java (`@Mapper`) and XML mapper files, lists every query by name and type. Supports inline SQL annotations (including Java 15+ **text blocks** `"""..."""`) and XML-mapped interfaces. Results stream in folder-by-folder so the panel populates progressively on large projects. Scan results are cached — switching to another panel and back reuses the result instantly without rescanning. MyBatis Generator `@SelectProvider` / `@InsertProvider` etc. are automatically skipped (no inline SQL to browse)
 - **SQL Files panel** — New panel that lists every `.sql` file in the workspace. Click any file to open it in the Query panel and execute against a configured database. Panel refreshes automatically when `.sql` files are created or deleted
 - **Query panel** — Click a query to open it, edit SQL inline with **syntax highlighting**, fill typed parameters (`#{param}`), and execute. New `#{param}` placeholders added during editing are detected automatically and appended to the parameter table
@@ -205,6 +206,36 @@ Method names are listed in the panel with query kind inferred from the name pref
 ```
 
 Both `#{param}` and `${param}` placeholders are detected and shown in the parameter table.
+
+### Dynamic SQL (`<if>`, `<foreach>`, `<where>`, `<set>`, …)
+
+Dynamic SQL tags in XML mappers and Java `<script>` annotations are evaluated at execute / preview time:
+
+```xml
+<select id="selectByCondition" resultType="Sample">
+  SELECT * FROM sample
+  <where>
+    <if test="name != null">
+      AND name LIKE #{name}
+    </if>
+    <if test="status != null">
+      AND status = #{status}
+    </if>
+  </where>
+</select>
+```
+
+Parameters referenced only in `test` attributes (e.g. `name`, `status`) are added to the parameter table automatically. Leave a parameter empty to treat it as `null` — the corresponding `<if>` block is excluded from the executed SQL.
+
+For `<foreach>`, enter comma-separated values in the **collection** parameter (e.g. `1,2,3` with type `number`):
+
+```xml
+<foreach collection="ids" item="id" open="(" close=")" separator=",">
+  #{id}
+</foreach>
+```
+
+→ expands to `(1, 2, 3)` at execution time.
 
 ## Notes
 

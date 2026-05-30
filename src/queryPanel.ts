@@ -5,6 +5,7 @@ import { ConfigManager } from './configManager';
 import { executeQuery, explainQuery } from './dbManager';
 import { buildExecutableSql, defaultParamEntries, extractPlaceholders, detectSqlKind,
          parseXmlMapper, parseJavaMapper, parseJavaMapperMethods } from './queryParser';
+import { transformDynamicSql } from './dynamicSqlTransformer';
 import { updateXmlMapperSql, updateJavaAnnotationSql } from './mapperWriter';
 import { ParsedQuery, MapperFile, ExtToWebMsg, WebToExtMsg } from './types';
 import { ParamPresetManager } from './paramPresetManager';
@@ -174,7 +175,10 @@ export class QueryPanel {
           msg.mode === 'range' && msg.selectedText
             ? msg.selectedText
             : (msg.displayedSql?.trim() || this._currentQuery.sql);
-        const execSql = buildExecutableSql(sqlTemplate, msg.params);
+        const execSql = buildExecutableSql(
+          transformDynamicSql(sqlTemplate, msg.params),
+          msg.params
+        );
         if (!execSql.trim()) {
           this._postError('No SQL to execute.');
           return;

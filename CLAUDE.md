@@ -37,7 +37,8 @@ src/
   mapperScanner.ts          # pure parsing logic; isProviderMapper() skips @SelectProvider/@InsertProvider etc. files
   scanUtils.ts              # pure helpers: makeGlob(), buildExcludeGlob(), MAPPER_DEFAULT_EXCLUDE, DATASET_DEFAULT_EXCLUDE, SQL_DEFAULT_EXCLUDE
   sheetReader.ts            # SheetReader interface + CsvReader + XlsxReader + getSheetReader() registry; registerSheetReader() for new formats
-  queryParser.ts            # extract #{} placeholders, buildExecutableSql(), formatValue(), detectSqlKind()
+  queryParser.ts            # extract #{} placeholders, buildExecutableSql(), formatValue(), detectSqlKind(); extractDynamicParams() finds OGNL-only refs (test/collection attrs); extractForeachLoopVars() excludes item/index loop vars from params table
+  dynamicSqlTransformer.ts  # transformDynamicSql() — evaluates MyBatis dynamic SQL tags against ParamEntry values; built-in OGNL recursive-descent evaluator (no eval/Function); handles <script>, <if>, <where>, <set>, <trim>, <foreach>, <choose>/<when>/<otherwise>, <bind>, CDATA
   mapperWriter.ts           # write SQL back to mapper files: updateXmlMapperSql(), updateJavaAnnotationSql()
   sqlFileProvider.ts        # WebviewViewProvider — SQL Files panel; scans **/*.sql via workspace.findFiles
   queryPanel.ts             # WebviewPanel for query execution (singleton); handles execute/explain/preview/write-back/reload
@@ -49,14 +50,14 @@ src/
   datasetLoaderPanel.ts     # WebviewPanel for bulk-loading; _sendInit() reads XLSX sheet names via getSheetReader().listSheets() before sending init to webview
   datasetLoader.ts          # readSheetData() delegates to getSheetReader(); loadSheetToDb() via dbManager.bulkLoad()
   datasetScanner.ts         # scanDatasetFiles(FolderScanConfig[]) — per-folder include+exclude; xlsx sheet names deferred to DatasetLoaderPanel
-  queryParser.ts            # JAVA_ANNOTATION_RE supports single-quoted strings AND Java 15+ text blocks ("""); parseJavaMapperMethods() handles @Mapper interfaces with no inline SQL; detectSqlKind() infers QueryKind from first DML keyword
+  queryParser.ts            # JAVA_ANNOTATION_RE supports single-quoted strings AND Java 15+ text blocks ("""); parseJavaMapperMethods() handles @Mapper interfaces with no inline SQL; detectSqlKind() infers QueryKind from first DML keyword; <script> wrapper stripped in parseJavaMapper; formatValue() exported for use by dynamicSqlTransformer
   drivers/
     sqlite.ts               # sql.js (pure WASM, no native build required); implements bulkLoad
     postgresql.ts           # pg (pure JS); implements bulkLoad
     mysql.ts                # mysql2/promise (pure JS); implements bulkLoad
 
 media/src/
-  queryPanel.ts             # webview script — DOM only, no Node APIs; Preview SQL + Explain buttons; SQL syntax highlighting via highlight.js (hljs.highlight(sql, {language:'sql'}))
+  queryPanel.ts             # webview script — DOM only, no Node APIs; Preview SQL + Explain buttons; SQL syntax highlighting via highlight.js; imports transformDynamicSql for client-side preview
   configPanel.ts            # webview script for DB config panel
   mapperPanel.ts            # webview script for Mappers panel (filter, flat/tree render)
   datasetPanel.ts           # webview script for Dataset panel (filter input, flat/tree render, lists CSV/XLSX files)
@@ -64,9 +65,10 @@ media/src/
   sqlFilePanel.ts           # webview script for SQL Files panel (filter input, flat/tree render, lists .sql files)
 
 test/
-  queryParser.test.ts       # unit tests for queryParser.ts — not included in VSIX
-  datasetLoader.test.ts     # unit tests for CsvReader, XlsxReader, getSheetReader, readSheetData
-  scanPatterns.test.ts      # unit tests for makeGlob, buildExcludeGlob, isProviderMapper, parseFile(provider skip)
+  queryParser.test.ts           # unit tests for queryParser.ts — not included in VSIX
+  dynamicSqlTransformer.test.ts # unit tests for all dynamic SQL tag patterns (if, foreach, where, set, trim, choose, bind, script, CDATA)
+  datasetLoader.test.ts         # unit tests for CsvReader, XlsxReader, getSheetReader, readSheetData
+  scanPatterns.test.ts          # unit tests for makeGlob, buildExcludeGlob, isProviderMapper, parseFile(provider skip)
 
 sample/                     # test fixtures
   src/main/java/…/          # Java @Mapper samples (SampleMapper, UserMapper)
@@ -76,6 +78,23 @@ sample/                     # test fixtures
 ```
 
 ## Architecture decisions
+
+### Dynamic SQL execution flow
+
+`transformDynamicSql(sql, params)` is called **before** `buildExecutableSql(sql, params)` in two places:
+- `src/queryPanel.ts` — server-side execution path (always)
+- `media/src/queryPanel.ts` — client-side **Preview SQL** path (webview; no Node APIs used)
+
+`dynamicSqlTransformer.ts` has no Node.js dependencies so esbuild bundles it into the webview IIFE cleanly. It must never use `eval()` or `Function()` — the webview CSP blocks both.
+
+**Parameter extraction order** (`extractAllParams` in `queryParser.ts`):
+1. `extractPlaceholders(sql)` — finds `#{name}` in SQL body
+2. `extractDynamicParams(sql)` — finds identifiers in `test="…"`, `collection="…"`, `bind value="…"` attrs
+3. `extractForeachLoopVars(sql)` — collects `item`/`index` loop-var names to **exclude** from (1) and (2)
+
+Result: params table shows exactly what the user needs to fill in — no loop variables, no missing OGNL refs.
+
+**`prefixOverrides` / `suffixOverrides` in `<trim>`**: spaces in the override token are preserved (e.g. `"AND |OR "` must NOT be trimmed to `"AND|OR"` — the trailing space prevents false matches like `"ORDER"` matching `"OR"`).
 
 ### Extensibility patterns
 

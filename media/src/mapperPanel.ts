@@ -120,14 +120,12 @@ function renderFile(mf: MapperFile, indented = false): string {
   const f = filterText();
   const isOpen = f ? true : expanded.has(mf.filePath);
   const chevron = isOpen ? '▾' : '▸';
-  const srcClass = mf.source === 'java' ? 'java' : 'xml';
   const indentClass = indented ? ' indent' : '';
   const fileName = mf.filePath.replace(/\\/g, '/').split('/').pop() ?? '';
 
   let html = `
     <div class="file-row${indentClass}" data-fp="${escHtml(mf.filePath)}">
       <span class="chevron">${chevron}</span>
-      <span class="src-badge ${srcClass}">${mf.source === 'java' ? 'J' : 'X'}</span>
       <span class="file-label">${escHtml(mf.label)}</span>
       <span class="file-desc">${escHtml(fileName)}</span>
     </div>`;

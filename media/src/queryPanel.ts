@@ -4,6 +4,7 @@
  */
 
 import type { ExtToWebMsg, WebToExtMsg, ParsedQuery, ParamEntry, ParamType, ParamPreset, DbConnectionConfig, QueryResult } from '../../src/types';
+import { transformDynamicSql } from '../../src/dynamicSqlTransformer';
 import hljs from 'highlight.js/lib/core';
 import sql from 'highlight.js/lib/languages/sql';
 hljs.registerLanguage('sql', sql);
@@ -267,7 +268,7 @@ function buildPreviewSql(sqlTemplate: string, params: ParamEntry[]): string {
 
 function showPreview(): void {
   const sqlTemplate = (el('query-display') as HTMLElement).textContent ?? '';
-  const sql = buildPreviewSql(sqlTemplate, paramEntries);
+  const sql = buildPreviewSql(transformDynamicSql(sqlTemplate, paramEntries), paramEntries);
   lastResult = null;
   el('result-info').textContent = 'Preview SQL (parameters substituted)';
   el('result-info').className = 'result-info';
